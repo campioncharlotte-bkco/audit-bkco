@@ -4,6 +4,10 @@
    anomalies datées de la période. Les anomalies hebdomadaires portent une
    échéance caméra (14 jours de rétention chez BKCO) : la file est triée
    par ce qui va expirer, pas par gravité supposée.
+
+   Règle de reprise : un dépôt est atomique du point de vue de l'auditeur.
+   Soit il aboutit et remplace le précédent du même rapport sur la même
+   période, soit il est marqué rejeté et ne bloque pas la nouvelle tentative.
    ===================================================================== */
 
 const crypto = require("crypto");
@@ -18,6 +22,11 @@ const DELAI_ANNULATION_H = 2;     // procédure BK : annuler aussitôt, 2h max e
 const TOLERANCE_VENTILATION = 5;  // euros : en deçà, l'écart espèces est repris
                                   // par un autre mode de règlement — erreur de
                                   // saisie et non manquant
+
+// Tables mensuelles alimentées en upsert : un redépôt écrase la ligne par
+// sa clé (restaurant, mois, badge). Les purger par import_id effacerait les
+// colonnes apportées par l'autre rapport de la paire.
+const TABLES_UPSERT = ["flux_caissiers", "tickets_non_payants", "flux_responsables"];
 
 async function sb(chemin, options = {}) {
   const r = await fetch(`${URL_SB}/rest/v1/${chemin}`, {
@@ -84,6 +93,30 @@ function momentShift(h) {
 const jours = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n);
                           return x.toISOString().slice(0, 10); };
 
+// Un dépôt qui échoue en cours de route ne doit pas rester en travers du
+// chemin : on le marque rejeté, son empreinte cesse de bloquer la reprise.
+async function marquerRejete(id, motif) {
+  try {
+    await sb(`imports?id=eq.${id}`, { method: "PATCH", prefer: "return=minimal",
+      body: JSON.stringify({ statut: "REJETE",
+                             recoupement_detail: String(motif).slice(0, 300) }) });
+  } catch { /* le signalement d'erreur ne doit jamais masquer l'erreur */ }
+}
+
+// Redéposer un rapport remplace le précédent au lieu de s'y ajouter :
+// sans cela, une correction de fichier double les lignes en base et tous
+// les cumuls avec.
+async function remplacerAncienDepot(rid, code, debut, fin, saufId, table) {
+  const anciens = await sb(`imports?restaurant_id=eq.${rid}&type_rapport_code=eq.${code}`
+    + `&periode_debut=eq.${debut}&periode_fin=eq.${fin}&id=neq.${saufId}&select=id`);
+  if (!anciens.length) return 0;
+  const ids = anciens.map(a => a.id).join(",");
+  if (table && !TABLES_UPSERT.includes(table))
+    await sb(`${table}?import_id=in.(${ids})`, { method: "DELETE", prefer: "return=minimal" });
+  await sb(`imports?id=in.(${ids})`, { method: "DELETE", prefer: "return=minimal" });
+  return anciens.length;
+}
+
 /* ---------- dépôt ---------- */
 
 async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, periode_fin,
@@ -94,9 +127,12 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
   const p = parser(contenu, nom_fichier);
   if (p.erreur) return { erreur: p.erreur, entetes: p.entetes };
 
+  // Seul un dépôt abouti bloque le redépôt du même fichier. Un dépôt rejeté
+  // ou interrompu ne doit jamais empêcher de recommencer.
   const hash = crypto.createHash("sha256").update(contenu).digest("hex");
   const [doublon] = await sb(
-    `imports?restaurant_id=eq.${restaurant_id}&fichier_hash=eq.${hash}&select=id,depose_le&limit=1`);
+    `imports?restaurant_id=eq.${restaurant_id}&fichier_hash=eq.${hash}`
+    + `&statut=eq.OK&select=id,depose_le&limit=1`);
   if (doublon) return { erreur: `Fichier déjà déposé le ${doublon.depose_le.slice(0, 10)}.` };
 
   // La période est lue dans le fichier, jamais déclarée par le déposant :
@@ -128,9 +164,10 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
       recoup = recouperSynthese(p.brut[0], an.reduce((t, x) => t + Number(x.montant), 0), rep.length);
   }
 
+  const codeRapport = p.synthese ? "SYNTHESE_CA" : p.type;
   const [imp] = await sb("imports", { method: "POST", body: JSON.stringify({
     restaurant_id: Number(restaurant_id),
-    type_rapport_code: p.synthese ? "SYNTHESE_CA" : p.type,
+    type_rapport_code: codeRapport,
     periode_debut: debut, periode_fin: fin,
     fichier_nom: nom_fichier, fichier_hash: hash, nb_lignes: p.nb, nature,
     recoupement_ok: recoup ? recoup.ok : null,
@@ -144,41 +181,53 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
   if (p.synthese)
     return { ok: true, import_id: imp.id, type: p.type, synthese: p.synthese, nb: p.nb };
 
-  const lignes = p.donnees.map(d => ({ ...d, import_id: imp.id, restaurant_id: Number(restaurant_id) }));
+  // À partir d'ici, toute erreur invalide le dépôt : la ligne d'import est
+  // marquée rejetée pour que le fichier reste redéposable.
+  try {
+    const remplaces = await remplacerAncienDepot(
+      Number(restaurant_id), codeRapport, debut, fin, imp.id, p.table);
 
-  // Les flux caissiers (1) et (2) alimentent la même ligne : (1) apporte
-  // corrections/annulations/diff. de caisse, (2) les modes de paiement.
-  const mois = debut.slice(0, 8) + "01";
+    const lignes = p.donnees.map(d => ({ ...d, import_id: imp.id,
+                                         restaurant_id: Number(restaurant_id) }));
 
-  if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
-    // les rapports cumulés se terminent par une ligne de totaux, sans badge
-    const utiles = lignes.filter(l => l.badge_code && String(l.badge_code).trim());
-    const cible = `${p.table}?on_conflict=restaurant_id,mois,badge_code`;
-    const entete = { prefer: "resolution=merge-duplicates,return=minimal" };
-    if (p.fusion) {
-      // le rapport (2) complète la ligne créée par le (1) : envoi ligne à
-      // ligne pour ne pas écraser les colonnes que lui seul renseigne
-      for (const l of utiles)
-        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([{ ...l, mois }]) });
-    } else {
+    // Les flux caissiers (1) et (2) alimentent la même ligne : (1) apporte
+    // corrections/annulations/diff. de caisse, (2) les modes de paiement.
+    const mois = debut.slice(0, 8) + "01";
+
+    if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
+      // les rapports cumulés se terminent par une ligne de totaux, sans badge
+      const utiles = lignes.filter(l => l.badge_code && String(l.badge_code).trim());
+      const cible = `${p.table}?on_conflict=restaurant_id,mois,badge_code`;
+      const entete = { prefer: "resolution=merge-duplicates,return=minimal" };
+      if (p.fusion) {
+        // le rapport (2) complète la ligne créée par le (1) : envoi ligne à
+        // ligne pour ne pas écraser les colonnes que lui seul renseigne
+        for (const l of utiles)
+          await sb(cible, { ...entete, method: "POST", body: JSON.stringify([{ ...l, mois }]) });
+      } else {
+        for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
+          await sb(cible, { ...entete, method: "POST", body: JSON.stringify([l]) });
+      }
+    } else if (p.table === "flux_responsables") {
+      const utiles = lignes.filter(l => l.responsable && String(l.responsable).trim());
       for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
-        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([l]) });
+        await sb("flux_responsables?on_conflict=restaurant_id,mois,responsable",
+          { method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+            body: JSON.stringify([l]) });
+    } else {
+      await parLots(p.table, lignes);
     }
-  } else if (p.table === "flux_responsables") {
-    const utiles = lignes.filter(l => l.responsable && String(l.responsable).trim());
-    for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
-      await sb("flux_responsables?on_conflict=restaurant_id,mois,responsable",
-        { method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-          body: JSON.stringify([l]) });
-  } else {
-    await parLots(p.table, lignes);
+
+    const nouveaux = p.table === "remises_lignes"
+      ? await enregistrerLibelles(p.donnees, debut) : [];
+    const anomalies = await genererAnomalies(Number(restaurant_id), debut, fin);
+
+    return { ok: true, import_id: imp.id, type: p.type, nb: p.nb, remplaces,
+             periode: [debut, fin], libelles_a_qualifier: nouveaux, anomalies };
+  } catch (e) {
+    await marquerRejete(imp.id, e.message || e);
+    return { erreur: "Dépôt interrompu, rien n'a été conservé : " + String(e.message || e) };
   }
-
-  const nouveaux = p.table === "remises_lignes" ? await enregistrerLibelles(p.donnees, debut) : [];
-  const anomalies = await genererAnomalies(Number(restaurant_id), debut, fin);
-
-  return { ok: true, import_id: imp.id, type: p.type, nb: p.nb,
-           periode: [debut, fin], libelles_a_qualifier: nouveaux, anomalies };
 }
 
 /* ---------- libellés de remise appris en marchant ---------- */
