@@ -190,8 +190,20 @@ const actions = {
     };
   },
 
-  // Libellés de remise jamais vus : à qualifier une fois. Sans ce garde-fou,
-  // la roulette drive de juin 2026 aurait déclenché une alerte rouge à tort.
+  // Libellés de remise. Sans ce garde-fou, la roulette drive de juin 2026
+  // aurait déclenché une alerte rouge à tort. Une qualification doit rester
+  // révisable : on se trompe, et un libellé change de sens d'une opération
+  // à l'autre.
+  async libelles({ statut }, ctx) {
+    let q = "libelles_remise?select=*&order=derniere_vue.desc&limit=600";
+    if (statut && statut !== "TOUS") q += `&statut=eq.${statut}`;
+    const libelles = await sb(q);
+    const tous = await sb("libelles_remise?select=statut");
+    const compte = { A_QUALIFIER: 0, AUTORISE: 0, OPERATION: 0, NON_AUTORISE: 0 };
+    tous.forEach(l => { compte[l.statut] = (compte[l.statut] || 0) + 1; });
+    return { libelles, compte };
+  },
+
   async libellesAQualifier(_, ctx) {
     return { libelles: await sb(
       "libelles_remise?statut=eq.A_QUALIFIER&select=*&order=derniere_vue.desc") };
@@ -337,10 +349,35 @@ const actions = {
     return { ok: true };
   },
 
+  // La table des salariés est le pivot du dispositif : sans elle, aucune
+  // anomalie n'est nominative. On renvoie donc aussi les badges vus dans
+  // les données mais absents de la table — ce sont eux qui font apparaître
+  // des trigrammes illisibles dans l'analyse.
   async salaries({ restaurant_id }, ctx) {
     if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    return { salaries: await sb(
-      `salaries?restaurant_id=eq.${restaurant_id}&select=*&order=badge_code`) };
+    const [liste, flux, sessions] = await Promise.all([
+      sb(`salaries?restaurant_id=eq.${restaurant_id}&select=*&order=badge_code`),
+      sb(`flux_caissiers?restaurant_id=eq.${restaurant_id}&select=badge_code`),
+      sb(`sessions_caisse?restaurant_id=eq.${restaurant_id}&select=badge_code,valide_par&limit=3000`)
+    ]);
+    const connus = new Set(liste.map(s => s.badge_code));
+    const vus = new Set();
+    flux.forEach(f => { if (f.badge_code) vus.add(String(f.badge_code).trim().toUpperCase()); });
+    sessions.forEach(s => {
+      if (s.badge_code) vus.add(String(s.badge_code).trim().toUpperCase());
+      const v = s.valide_par && String(s.valide_par).trim();
+      if (v && v.indexOf(" ") < 0) vus.add(v.toUpperCase());
+    });
+    return { salaries: liste,
+             inconnus: [...vus].filter(b => b && !connus.has(b)).sort() };
+  },
+
+  async supprimerSalarie({ id, restaurant_id }, ctx) {
+    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
+    if (!["DG", "SUPERVISEUR", "CDG"].includes(ctx.role))
+      return { erreur: "Réservé à la direction et au contrôle de gestion." };
+    await sb(`salaries?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+    return { ok: true };
   },
 
   // Les badges sont construits en 4 lettres du nom + 3 du prénom
