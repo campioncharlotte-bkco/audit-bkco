@@ -180,8 +180,10 @@ const actions = {
     if (!restos.length) return { depots: [] };
     const [types, imports] = await Promise.all([
       sb("types_rapport?actif=is.true&select=*&order=ordre_menu"),
-      sb(`imports?restaurant_id=in.(${restos.join(",")})&periode_debut=gte.${debut}`
-        + `&periode_fin=lte.${fin}&select=*&order=depose_le.desc`)
+      // chevauchement et non inclusion : une journée fiscale qui déborde sur
+      // le mois suivant rendait l'import invisible dans sa propre checklist
+      sb(`imports?restaurant_id=in.(${restos.join(",")})&periode_debut=lte.${fin}`
+        + `&periode_fin=gte.${debut}&select=*&order=depose_le.desc`)
     ]);
     return {
       types, imports,
