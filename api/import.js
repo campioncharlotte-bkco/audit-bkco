@@ -207,7 +207,7 @@ async function genererAnomalies(restaurant_id, debut, fin) {
     pousser({
       niveau: "SESSION", ratio: "ESPECES",
       periode_debut: s.fin_session || s.date_fiscale, periode_fin: s.fin_session || s.date_fiscale,
-      badge_code: s.badge_code, valeur: ecart, montant_ttc: ecart,
+      badge_code: s.badge_code, manager_code: s.valide_par, valeur: ecart, montant_ttc: ecart,
       score: 30 + (tardif ? 15 : 0),
       regles_declenchees: ["SESSION_ECART_ESPECES", ...(tardif ? ["SESSION_ECART_TARDIF"] : [])],
       echeance_camera: jours(s.date_fiscale, RETENTION_CAMERA),
@@ -225,7 +225,8 @@ async function genererAnomalies(restaurant_id, debut, fin) {
     pousser({
       niveau: "TICKET", ratio: "ANNULATIONS",
       periode_debut: a.date_pos, periode_fin: a.date_neg,
-      badge_code: a.vendeur_pos, valeur: h, montant_ttc: a.montant,
+      badge_code: a.vendeur_pos, manager_code: a.valide_par_neg || a.manager_neg,
+      valeur: h, montant_ttc: a.montant,
       score: Math.min(25 + Math.floor(h / 12) * 5, 45),
       regles_declenchees: ["ANNUL_DELAI"],
       echeance_camera: jours(String(a.date_pos).slice(0, 10), RETENTION_CAMERA),
@@ -249,7 +250,9 @@ async function genererAnomalies(restaurant_id, debut, fin) {
     pousser({
       niveau: "TICKET", ratio: "REMISES_50",
       periode_debut: dates[0], periode_fin: dates[dates.length - 1],
-      badge_code: managers.length === 1 ? managers[0] : null,
+      badge_code: [...new Set(lignes.map(l => l.vendeur_code))].length === 1
+        ? lignes[0].vendeur_code : null,
+      manager_code: managers.length === 1 ? managers[0] : null,
       valeur: lignes.length,
       montant_ttc: lignes.reduce((t, l) => t + Number(l.montant_remise || 0), 0),
       score: st === "NON_AUTORISE" ? 40 : 30,
@@ -279,6 +282,8 @@ async function genererAnomalies(restaurant_id, debut, fin) {
       niveau: "JOUR", ratio: "CO",
       periode_debut: jour, periode_fin: jour,
       valeur: total, montant_ttc: total,
+      manager_code: [...new Set(lignes.map(c => c.manager_code).filter(Boolean))].length === 1
+        ? lignes[0].manager_code : null,
       score: (regles.includes("CO_HORS_RUSH") ? 15 : 0) + (regles.includes("CO_AUTO_DOMINANT") ? 20 : 0),
       regles_declenchees: regles,
       echeance_camera: jours(jour, RETENTION_CAMERA),
