@@ -37,7 +37,7 @@ header{position:sticky;top:0;z-index:10;background:var(--surface);
   border-bottom:1px solid var(--filet);padding:12px 16px;display:flex;align-items:center;gap:12px}
 header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
 header .qui{margin-left:auto;font-size:13px;color:var(--ardoise)}
-main{max-width:940px;margin:0 auto;padding:18px 16px}
+main{max-width:860px;margin:0 auto;padding:18px 16px}
 h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
 .sous{color:var(--ardoise);font-size:14px;margin:0 0 20px}
 
@@ -50,7 +50,7 @@ nav button[aria-current="page"]{color:var(--profond);font-weight:600;box-shadow:
 @media(min-width:800px){
   #app{padding-bottom:0}
   nav{position:sticky;top:53px;bottom:auto;border-top:0;border-bottom:1px solid var(--filet);
-    max-width:940px;margin:0 auto}
+    max-width:860px;margin:0 auto}
   nav button{flex:0 0 auto;padding:12px 16px;font-size:14px;flex-direction:row;gap:7px}
 }
 
@@ -71,7 +71,36 @@ button.ligne:hover{background:var(--papier)}
 .etiquette.urgent{background:#f7ede0;color:var(--ambre)}
 .etiquette.expire{background:#f6e6e5;color:var(--rouge)}
 .etiquette.ok{background:#e6efea;color:var(--vert)}
-.ligne .titre .etiquette{margin-left:6px;vertical-align:1px}
+
+/* --- cartes d'analyse --- */
+.carte{background:var(--surface);border:1px solid var(--filet);border-radius:11px;
+  margin-bottom:12px;overflow:hidden}
+.carte.ROUGE{border-left:5px solid var(--rouge)}
+.carte.ORANGE{border-left:5px solid var(--ambre)}
+.carte.VERT{border-left:5px solid var(--vert)}
+.carte.GRIS{border-left:5px solid var(--filet)}
+.tete{display:flex;gap:12px;align-items:flex-start;padding:15px 16px;width:100%;text-align:left}
+.tete:hover{background:var(--papier)}
+.tete .nom{font-size:16px;font-weight:650;letter-spacing:-.01em}
+.tete .verdict{color:var(--ardoise);font-size:13.5px;margin-top:5px;line-height:1.45}
+.pastille{flex:0 0 auto;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;
+  margin-top:2px}
+.pastille.ROUGE{background:#f6e6e5;color:var(--rouge)}
+.pastille.ORANGE{background:#f7ede0;color:var(--ambre)}
+.pastille.VERT{background:#e6efea;color:var(--vert)}
+.pastille.GRIS{background:var(--sable);color:var(--ardoise)}
+.chiffres{display:flex;gap:0;border-top:1px solid var(--filet);background:var(--papier)}
+.chiffres div{flex:1;padding:11px 12px;text-align:center;border-right:1px solid var(--filet)}
+.chiffres div:last-child{border-right:0}
+.chiffres b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.chiffres span{font-size:11.5px;color:var(--ardoise)}
+.ia{padding:14px 16px;background:#eef2f6;color:var(--profond);font-size:14px;line-height:1.55;
+  border-top:1px solid var(--filet)}
+.ia .marque{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;
+  opacity:.65;margin-bottom:6px}
+.sectionnette{padding:9px 16px;background:var(--papier);font-size:12px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;color:var(--ardoise);
+  border-top:1px solid var(--filet);border-bottom:1px solid var(--filet)}
 
 .vide{padding:40px 20px;text-align:center;color:var(--ardoise)}
 .vide b{display:block;color:var(--encre);margin-bottom:6px;font-size:15px}
@@ -105,9 +134,6 @@ textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
 .explication{padding:11px 14px;background:#eef2f6;color:var(--profond);
   font-size:13.5px;line-height:1.45;border-bottom:1px solid var(--filet)}
 .chargement{color:var(--ardoise);padding:30px;text-align:center}
-.barre{height:4px;background:var(--filet);border-radius:2px;overflow:hidden;
-  margin-top:6px;width:120px;margin-left:auto}
-.barre span{display:block;height:100%;background:var(--rouge)}
 </style>
 </head>
 <body>
@@ -140,6 +166,8 @@ const E = {};
 const $ = s => document.querySelector(s);
 const eur = n => (n === null || n === undefined ? "—" :
   Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
+const eur0 = n => (n === null || n === undefined ? "—" :
+  Math.round(Number(n)).toLocaleString("fr-FR") + " €");
 const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}) : "—";
 const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin",
@@ -184,386 +212,161 @@ async function demarrer() {
   $("#connexion").style.display = "none";
   $("#app").style.display = "block";
   $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [["anomalies","À vérifier","!"],["caisses","Caisses","▣"],
-                   ["depot","Dépôt","+"],["libelles","Remises","%"],["equipe","Équipe","•"]];
+  const onglets = [["analyse","Analyse","◉"],["depot","Dépôt","+"],
+                   ["libelles","Remises","%"],["equipe","Équipe","•"]];
   if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
   $("#nav").innerHTML = onglets.map(function(o){
     return '<button data-onglet="'+o[0]+'" onclick="aller(\''+o[0]+'\')"><b>'+o[2]+'</b>'+o[1]+'</button>';
   }).join("");
-  aller(E.droits.lecture.length ? "anomalies" : "depot");
+  aller(E.droits.lecture.length ? "analyse" : "depot");
 }
 
 function aller(onglet, params) {
-  if (onglet === "anomalies" && params && params.id) {
-    ouvrirAnomalie(params.id).catch(afficherErreur); return;
-  }
   E.onglet = onglet;
   document.querySelectorAll("#nav button").forEach(function(b){
     b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
   $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
-  ({ anomalies:vueAnomalies, caisses:vueCaisses, depot:vueDepot,
-     libelles:vueLibelles, equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
+  ({ analyse:vueAnalyse, depot:vueDepot, libelles:vueLibelles,
+     equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
 }
 const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
-const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
-const nomLisible = code => (E.noms && E.noms[code]) || code || "—";
 
 function basculer(id) {
   const e = document.getElementById(id);
-  e.style.display = e.style.display === "none" ? "block" : "none";
+  if (e) e.style.display = e.style.display === "none" ? "block" : "none";
 }
-
 function momentLisible(s) {
-  return { OUVERTURE:"ouverture · ", JOURNEE:"journée · ", FERMETURE:"fermeture · " }[s] || "";
+  return { OUVERTURE:"ouverture", JOURNEE:"journée", FERMETURE:"fermeture" }[s] || "";
 }
-
-/* ---------- à vérifier ---------- */
-
 function resteCamera(echeance) {
   if (!echeance) return null;
   return Math.ceil((new Date(echeance) - new Date()) / 86400000);
 }
 
-function etiquetteCamera(reste) {
-  if (reste === null) return "";
-  if (reste < 0) return '<span class="etiquette expire">images perdues</span>';
-  if (reste <= 4) return '<span class="etiquette urgent">' + reste + ' j pour la caméra</span>';
-  return '<span class="etiquette">' + reste + ' j</span>';
-}
+/* =====================================================================
+   ANALYSE — l'écran principal.
+   Une carte par encadrant, un verdict, et une explication rédigée.
+   Aucun tableau à interpréter : si un directeur doit comparer des
+   colonnes pour comprendre, l'écran a raté son travail.
+   ===================================================================== */
 
-function libelleRegle(a) {
-  const r = (a.regles_declenchees || [])[0];
-  const p = a.pieces || {};
-  return {
-    SESSION_ECART_ESPECES: "Manquant en caisse" + (p.validee_par ? " · validé par " + p.validee_par : ""),
-    SESSION_ECART_TARDIF: "Manquant en caisse sur une clôture de fin de service",
-    ANNUL_DELAI: "Annulation " + (p.delai_heures ? Math.round(p.delai_heures) + " h " : "") + "après le ticket",
-    REMISE_LIBELLE_INCONNU: "Remise non répertoriée : " + (p.libelle || ""),
-    REMISE_LIBELLE_INTERDIT: "Remise non autorisée : " + (p.libelle || ""),
-    CO_HORS_RUSH: "Commandes ouvertes concentrées après 21 h",
-    CO_AUTO_DOMINANT: "Commandes ouvertes annulées par le système, sans traçabilité",
-    RATIO_HORS_SEUIL: "Ratio au-dessus de la moyenne réseau",
-    TEND_EN_HAUSSE: "Ratio en progression continue",
-    TEND_STABLE_HAUT: "Ratio durablement élevé"
-  }[r] || r || "Écart";
-}
+const MOT_FEU = { ROUGE:"À vérifier", ORANGE:"À surveiller", VERT:"Rien à signaler",
+                  GRIS:"Trop peu de données" };
 
-const EXPLICATIONS = {
-  SESSION_ECART_ESPECES: "À la fermeture d'une caisse, l'argent compté est inférieur à ce que la caisse a enregistré, sans qu'un autre mode de règlement ne reprenne la différence. Le responsable nommé est celui qui a compté et validé.",
-  SESSION_ECART_TARDIF: "Même chose, sur une caisse fermée après 22 h — le créneau où les contrôles sont les plus rares.",
-  ANNUL_DELAI: "Un ticket a été annulé plusieurs heures après l'encaissement, alors que la procédure demande de le faire aussitôt. Ce délai permet de choisir après coup les tickets à annuler.",
-  REMISE_LIBELLE_INCONNU: "Une remise a été appliquée avec un libellé qui n'a pas encore été qualifié. Qualifiez-le dans l'onglet Remises s'il est légitime.",
-  REMISE_LIBELLE_INTERDIT: "Une remise a été appliquée avec un libellé que vous avez marqué comme non autorisé.",
-  CO_HORS_RUSH: "Des commandes envoyées au paiement n'ont jamais été finalisées, concentrées en fin de service. Si le client a payé en espèces sans que la commande soit validée, l'encaissement n'apparaît nulle part.",
-  CO_AUTO_DOMINANT: "Les commandes non finalisées ont été annulées par le système à la fermeture. Aucun nom n'y est associé : impossible de savoir qui a servi ces commandes.",
-  RATIO_HORS_SEUIL: "Le restaurant dépasse la moyenne du réseau sur ce ratio.",
-  TEND_EN_HAUSSE: "Ce ratio augmente mois après mois chez cette personne.",
-  TEND_STABLE_HAUT: "Ce ratio reste durablement au-dessus de la moyenne du restaurant."
-};
-
-/* On regarde d'abord les responsables : ce sont eux qui valident les
-   comptages, les annulations et les remises. Un écart isolé ne dit rien,
-   un nom qui revient chaque semaine dit quelque chose. */
-async function vueAnomalies(params) {
-  const axe = (params && params.axe) || E.axe || "manager";
-  E.axe = axe;
-  const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
-  E.noms = d.noms || {};
-  const groupes = {};
-  d.anomalies.forEach(function(a){
-    const k = (axe === "manager" ? a.manager_code : a.badge_code) || "—";
-    if (!groupes[k]) groupes[k] = { qui:k, liste:[], cumul:0, urgence:null, jours:{}, fermetures:0 };
-    const g = groupes[k];
-    g.liste.push(a);
-    if (a.shift === "FERMETURE") g.fermetures++;
-    g.cumul += Math.abs(Number(a.montant_ttc) || 0);
-    g.jours[String(a.periode_debut).slice(0,10)] = 1;
-    const r = resteCamera(a.echeance_camera);
-    if (r !== null && (g.urgence === null || r < g.urgence)) g.urgence = r;
-  });
-  const cles = Object.keys(groupes).sort(function(x,y){
-    if (x === "—") return 1; if (y === "—") return -1;
-    return groupes[y].liste.length - groupes[x].liste.length
-        || groupes[y].cumul - groupes[x].cumul;
-  });
-
-  $("#vue").innerHTML =
-    '<h2>À vérifier</h2>' +
-    '<p class="sous">' + d.anomalies.length + ' écart(s) à expliquer. ' +
-      'Le classement met en tête ceux dont le nom revient le plus souvent.</p>' +
-    '<div class="actions" style="margin:0 0 16px">' +
-      '<button' + (axe === "manager" ? ' class="fort"' : '') +
-        ' onclick="aller(\'anomalies\',{axe:\'manager\'})">Par responsable</button>' +
-      '<button' + (axe === "equipier" ? ' class="fort"' : '') +
-        ' onclick="aller(\'anomalies\',{axe:\'equipier\'})">Par équipier en caisse</button>' +
-    '</div>' +
-    (d.masquees ? '<div class="alerte info">' + d.masquees +
-      ' élément(s) vous concernant sont traités par votre hiérarchie.</div>' : '') +
-    (cles.length ? cles.map(function(k){ return blocPersonne(groupes[k], axe); }).join("")
-      : '<div class="bloc"><div class="vide"><b>Rien à vérifier</b>' +
-        'Déposez les exports de la période pour lancer une analyse.</div></div>');
-}
-
-function blocPersonne(g, axe) {
-  const id = "p" + (g.qui.replace(/[^A-Za-z0-9]/g, "") || "sans");
-  const parType = {};
-  g.liste.forEach(function(a){
-    const t = (a.regles_declenchees || [])[0] || "AUTRE";
-    parType[t] = (parType[t] || 0) + 1;
-  });
-  const types = Object.keys(parType);
-  const resume = types.map(function(t){ return parType[t] + " " + nomCourt(t, parType[t]); }).join(" · ");
-  const nbJours = Object.keys(g.jours).length;
-  const titre = g.qui === "—"
-    ? (axe === "manager" ? "Sans responsable identifié" : "Sans équipier identifié")
-    : esc(nomLisible(g.qui));
-
-  return '<div class="bloc">' +
-    '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
-      '<div class="corps"><div class="titre">' + titre + '</div>' +
-      '<div class="detail">' + esc(resume) + ' · sur ' + nbJours + ' jour(s)' +
-        (g.fermetures ? ' · dont ' + g.fermetures + ' en fermeture' : '') + '</div></div>' +
-      '<div style="text-align:right"><div class="montant num">' + eur(g.cumul) + '</div>' +
-      '<div style="margin-top:4px">' + etiquetteCamera(g.urgence) + '</div></div>' +
-    '</button>' +
-    '<div id="' + id + '" style="display:none">' +
-      types.map(function(t){
-        return '<div class="explication">' + esc(EXPLICATIONS[t] || "") + '</div>' +
-          g.liste.filter(function(a){ return (a.regles_declenchees||[])[0] === t; })
-            .map(function(a){
-              return '<button class="ligne" style="padding-left:26px" ' +
-                'onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
-                '<div class="corps"><div class="titre" style="font-weight:500">' +
-                  jour(a.periode_debut) + ' · ' + esc(nomCourt(t, 1)) + '</div>' +
-                '<div class="detail">' + esc(momentLisible(a.shift)) +
-                  esc(nomResto(a.restaurant_id)) +
-                  (axe === "manager" && a.badge_code ? " · caisse de " + esc(nomLisible(a.badge_code)) : "") +
-                  (axe === "equipier" && a.manager_code ? " · validé par " + esc(nomLisible(a.manager_code)) : "") +
-                  '</div></div>' +
-                '<div class="montant num ' + (a.montant_ttc < 0 ? "negatif" : "") + '">' +
-                  eur(a.montant_ttc) + '</div></button>';
-            }).join("");
-      }).join("") +
-    '</div></div>';
-}
-
-function nomCourt(regle, n) {
-  const p = n > 1 ? "s" : "";
-  return {
-    SESSION_ECART_ESPECES: "manquant" + p + " en caisse",
-    SESSION_ECART_TARDIF: "manquant" + p + " en fin de service",
-    ANNUL_DELAI: "annulation" + p + " tardive" + p,
-    REMISE_LIBELLE_INCONNU: "remise" + p + " non répertoriée" + p,
-    REMISE_LIBELLE_INTERDIT: "remise" + p + " non autorisée" + p,
-    CO_HORS_RUSH: "journée" + p + " à commandes ouvertes tardives",
-    CO_AUTO_DOMINANT: "journée" + p + " sans traçabilité",
-    RATIO_HORS_SEUIL: "ratio" + p + " au-dessus du réseau",
-    TEND_EN_HAUSSE: "ratio" + p + " en progression",
-    TEND_STABLE_HAUT: "ratio" + p + " durablement élevé"
-  }[regle] || "écart" + p;
-}
-
-async function ouvrirAnomalie(id) {
-  const r = await api("audit", "anomalie", { id });
-  const a = r.anomalie, evenements = r.evenements, p = a.pieces || {};
-  const peutClore = E.droits.cloture.indexOf(a.restaurant_id) >= 0;
-  const reste = resteCamera(a.echeance_camera);
-  $("#vue").innerHTML =
-    '<button class="retour" onclick="aller(\'anomalies\')">← Retour à la liste</button>' +
-    '<h2>' + esc(libelleRegle(a)) + '</h2>' +
-    '<p class="sous">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
-      (a.badge_code ? ' · badge ' + esc(a.badge_code) : '') + '</p>' +
-    (reste !== null && reste <= 4 ? '<div class="alerte erreur">' + (reste < 0
-      ? "Les images de cette période ne sont plus disponibles."
-      : "Il reste " + reste + " jour(s) pour consulter les images.") + '</div>' : '') +
-    '<div class="explication">' + esc(EXPLICATIONS[(a.regles_declenchees||[])[0]] || "") + '</div>' +
-    '<div class="bloc"><div class="zone"><dl>' +
-      Object.keys(p).map(function(k){
-        const v = p[k];
-        return '<dt>' + esc(k.replace(/_/g," ")) + '</dt><dd>' +
-          esc(Array.isArray(v) ? v.join(", ") : v) + '</dd>'; }).join("") +
-      '<dt>Montant</dt><dd class="num">' + eur(a.montant_ttc) + '</dd>' +
-      '<dt>Score</dt><dd class="num">' + (a.score === null ? "—" : a.score) + '</dd>' +
-    '</dl></div></div>' +
-    (evenements.length ? '<div class="bloc">' + evenements.map(function(e){
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(e.type) + '</div>' +
-        '<div class="detail">' + esc(e.contenu || "") + ' · ' + jour(e.cree_le) + '</div></div></div>';
-    }).join("") + '</div>' : '') +
-    '<div class="bloc"><div class="zone">' +
-      '<textarea id="note" placeholder="Ce que vous avez constaté : vérification caméra, ' +
-        'explication du salarié, erreur de procédure…"></textarea><div class="actions">' +
-      '<button onclick="majAnomalie(' + id + ',null)">Enregistrer la note</button>' +
-      (peutClore
-        ? '<button onclick="majAnomalie(' + id + ',\'EXPLIQUEE\')">Écart expliqué</button>' +
-          '<button class="fort" onclick="majAnomalie(' + id + ',\'CONFIRMEE\')">Écart confirmé</button>' +
-          '<button onclick="majAnomalie(' + id + ',\'CLASSEE\')">Classer sans suite</button>'
-        : '<span style="align-self:center;color:var(--ardoise);font-size:13.5px">' +
-          'Votre note remonte à la direction, qui décide de la suite.</span>') +
-    '</div></div></div>';
-}
-
-async function majAnomalie(id, statut) {
-  const c = $("#note").value.trim();
-  if (!c && !statut) return;
-  await api("audit", "majAnomalie", { id:id, statut:statut, commentaire:c,
-    type: statut ? "EXPLICATION" : "COMMENTAIRE" });
-  aller("anomalies");
-}
-
-/* ---------- caisses ---------- */
-
-/* Trois angles sur la même donnée : la session, la caisse, l'encadrant.
-   Aucun ne se lit en montant brut — celui qui valide 180 caisses accumule
-   mécaniquement plus d'écarts que celui qui en valide 40, et la caisse la
-   plus utilisée sort toujours en tête d'un cumul. On classe donc sur des
-   taux et des moyennes par session. */
-async function vueCaisses(params) {
+async function vueAnalyse(params) {
   const p = params || {};
-  E.caisses = { vue: p.vue || (E.caisses && E.caisses.vue) || "sessions",
-                restaurant_id: p.restaurant_id || (E.caisses && E.caisses.restaurant_id) || null,
-                mois: p.mois !== undefined ? p.mois : (E.caisses && E.caisses.mois) || null };
   const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
   if (!restos.length) { $("#vue").innerHTML =
     '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de lecture.</div>'; return; }
-  const rid = E.caisses.restaurant_id || restos[0].id;
-  E.caisses.restaurant_id = rid;
+  E.an = { restaurant_id: p.restaurant_id || (E.an && E.an.restaurant_id) || restos[0].id,
+           mois: p.mois !== undefined ? p.mois : (E.an && E.an.mois) || null };
+  const rid = E.an.restaurant_id;
 
-  const d = await api("audit", "caisses", { restaurant_id:rid, mois:E.caisses.mois });
-  E.noms = Object.assign({}, E.noms, d.noms || {});
-  E.caisses.mois = d.mois;
-  const v = E.caisses.vue;
+  const d = await api("analyse", "synthese", { restaurant_id: rid, mois: E.an.mois });
+  E.an.mois = d.mois;
+  E.dossier = d;
 
   const selecteurs =
     '<div class="duo">' +
-      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'caisses\',' +
+      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'analyse\',' +
         '{restaurant_id:Number(this.value),mois:null})">' +
         restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
           '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
       (d.mois_disponibles.length ? '<label class="champ"><span>Mois</span>' +
-        '<select onchange="aller(\'caisses\',{mois:this.value})">' +
+        '<select onchange="aller(\'analyse\',{mois:this.value})">' +
         d.mois_disponibles.map(m => '<option value="' + m + '"' +
           (m === d.mois ? " selected" : "") + '>' + moisLisible(m) + '</option>').join("") +
         '</select></label>' : '') +
     '</div>';
 
-  const onglets = [["sessions","Sessions"],["caisses","Par caisse"],["encadrants","Par encadrant"]];
-  const barre = '<div class="actions" style="margin:0 0 16px">' +
-    onglets.map(o => '<button' + (v === o[0] ? ' class="fort"' : '') +
-      ' onclick="aller(\'caisses\',{vue:\'' + o[0] + '\'})">' + o[1] + '</button>').join("") +
-    '</div>';
+  if (!d.mois) { $("#vue").innerHTML = '<h2>Analyse</h2>' + selecteurs +
+    '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
+    'Déposez les déclarations de caisse pour lancer l\'analyse.</div></div>'; return; }
 
-  const corps = v === "caisses" ? vueParCaisse(d)
-              : v === "encadrants" ? vueParEncadrant(d)
-              : vueParSession(d);
+  const r = d.resume;
+  const rouges = d.encadrants.filter(e => e.feu === "ROUGE").length;
 
   $("#vue").innerHTML =
-    '<h2>Écarts de caisse</h2>' +
-    '<p class="sous">Toutes les sessions dont le comptage espèces manque de plus de 20 €. ' +
-      'Rien ici n\'est une accusation : c\'est la liste de ce qui reste à expliquer.</p>' +
-    selecteurs + barre + corps;
+    '<h2>Analyse</h2>' +
+    '<p class="sous">Une carte par encadrant. Le classement compare chacun aux autres ' +
+      'encadrants du même restaurant, sur le même mois — pas à un seuil théorique.</p>' +
+    selecteurs +
+    '<div class="bloc"><div class="chiffres">' +
+      '<div><b>' + r.sessions + '</b><span>caisses comptées</span></div>' +
+      '<div><b class="' + (r.montant_manquants < 0 ? "montant negatif" : "") + '">' +
+        eur0(r.montant_manquants) + '</b><span>manquants à expliquer</span></div>' +
+      '<div><b>' + r.compensees + '</b><span>erreurs de saisie</span></div>' +
+      '<div><b>' + rouges + '</b><span>encadrant(s) à vérifier</span></div>' +
+    '</div>' +
+    (r.caisse_a_regarder ? '<div class="explication">La caisse ' +
+      esc(r.caisse_a_regarder.caisse) + ' concentre ' + r.caisse_a_regarder.taux_lourdes +
+      ' % de comptages en manque sur ' + r.caisse_a_regarder.sessions + ' sessions. ' +
+      'Quand une caisse décroche à volume comparable, cherchez d\'abord un problème de poste ' +
+      'ou de procédure avant de regarder les personnes.</div>' : '') +
+    '</div>' +
+    (d.encadrants.length ? d.encadrants.map(carteEncadrant).join("")
+      : '<div class="bloc"><div class="vide"><b>Aucun encadrant sur ce mois</b>' +
+        'Déposez la déclaration de caisse de la période.</div></div>');
 }
 
-/* Une session dont le manquant espèces est repris à l'euro près par la CB
-   ou le TPE n'est pas un manquant : c'est un encaissement saisi dans le
-   mauvais mode. Ces sessions sont montrées à part, repliées. */
-function vueParSession(d) {
-  const ligne = s => {
-    const reste = resteCamera(s.echeance_camera);
+function carteEncadrant(e) {
+  const id = "c" + String(e.code).replace(/[^A-Za-z0-9]/g, "");
+  const hist = (e.historique || []).slice(-6);
+
+  const lignesFaits = (e.faits || []).map(function(f){
+    const reste = resteCamera(f.echeance_camera);
     return '<div class="ligne"><div class="corps">' +
-      '<div class="titre">' + jour(s.date_fiscale) + ' · ' + esc(nomLisible(s.badge_code)) + '</div>' +
-      '<div class="detail">' + esc(momentLisible(s.shift)) + 'caisse ' + esc(s.caisse || "—") +
-        (s.responsable ? ' · validé par ' + esc(nomLisible(s.responsable)) : '') +
-        (Number(s.nb_remise) ? ' · ' + s.nb_remise + ' remise(s)' : '') +
-        (Number(s.nb_annulation) ? ' · ' + s.nb_annulation + ' annulation(s)' : '') +
+      '<div class="titre" style="font-weight:500">' + jour(f.date) + ' · ' +
+        esc(f.equipier || "caisse non identifiée") + '</div>' +
+      '<div class="detail">' + esc(momentLisible(f.shift)) + ' · caisse ' + esc(f.caisse || "—") +
+        (reste !== null && reste >= 0 ? ' · caméra encore disponible ' + reste + ' j' : '') +
         '</div></div>' +
-      '<div style="text-align:right"><div class="montant num negatif">' +
-        eur(s.ecart_especes) + '</div>' +
-      '<div style="margin-top:4px">' + etiquetteCamera(reste) + '</div></div></div>';
-  };
-  const total = d.sessions.reduce((t,s) => t + Number(s.ecart_especes || 0), 0);
-
-  return (d.sessions.length
-    ? '<div class="bloc">' +
-        '<div class="explication">' + d.sessions.length + ' session(s) pour ' + eur(total) +
-          ' manquants, non repris par un autre mode de règlement. Les plus récentes sont ' +
-          'encore dans la fenêtre de 14 jours des caméras.</div>' +
-        d.sessions.map(ligne).join("") + '</div>'
-    : '<div class="bloc"><div class="vide"><b>Aucun manquant sur ce mois</b>' +
-      'Tous les écarts de comptage sont sous 20 € ou repris par un autre mode de règlement.</div></div>') +
-  (d.compensees.length
-    ? '<div class="bloc">' +
-        '<button class="ligne" onclick="basculer(\'compensees\')">' +
-          '<div class="corps"><div class="titre">' + d.compensees.length +
-            ' écart(s) repris par la CB ou le TPE</div>' +
-          '<div class="detail">Le comptage espèces manque, mais un autre mode de règlement ' +
-            'reprend la différence : erreur de saisie, pas de perte.</div></div>' +
-          '<span class="etiquette ok">sans suite</span></button>' +
-        '<div id="compensees" style="display:none">' + d.compensees.map(ligne).join("") + '</div>' +
-      '</div>' : "");
-}
-
-/* Le taux de sessions en écart, pas le cumul : deux caisses à volume
-   comparable et à taux très différents désignent un poste, pas une
-   personne. C'est le seul écart structurel qu'on sache lire aujourd'hui. */
-function vueParCaisse(d) {
-  if (!d.caisses.length) return '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
-    'Déposez les déclarations de caisse du mois.</div></div>';
-  const pire = Math.max.apply(null, d.caisses.map(c => Number(c.taux_lourdes) || 0)) || 1;
-  return '<div class="bloc">' +
-    '<div class="explication">Chaque ligne est une caisse. Comparez le taux, pas le cumul : ' +
-      'la caisse la plus utilisée accumule mécaniquement plus d\'écarts. Deux caisses à volume ' +
-      'proche et à taux très différents désignent un poste ou une procédure, pas une personne.</div>' +
-    d.caisses.map(function(c){
-      const taux = Number(c.taux_lourdes) || 0;
-      return '<div class="ligne"><div class="corps">' +
-        '<div class="titre">' + esc(c.caisse || "caisse non identifiée") + '</div>' +
-        '<div class="detail">' + c.sessions + ' session(s) · ' + c.lourdes +
-          ' au-delà de 20 € · cumul ' + eur(c.ecart_cumule) + '</div></div>' +
-        '<div style="text-align:right"><div class="montant num' + (taux >= 10 ? " negatif" : "") + '">' +
-          taux.toLocaleString("fr-FR") + ' %</div>' +
-        '<div class="barre"><span style="width:' + (taux / pire * 100) + '%"></span></div>' +
-        '<div class="detail">' + eur(c.ecart_moyen) + ' par session</div></div></div>';
-    }).join("") + '</div>';
-}
-
-function vueParEncadrant(d) {
-  if (!d.encadrants.length) return '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
-    'Déposez les déclarations de caisse du mois.</div></div>';
-  return d.encadrants.map(ligneEncadrant).join("");
-}
-
-function ligneEncadrant(e) {
-  const id = "e" + String(e.responsable).replace(/[^A-Za-z0-9]/g, "");
-  const part = Number(e.part_deficit) || 0;
-  const teinte = part >= 55 ? "expire" : part >= 45 ? "urgent" : "ok";
-  const hist = (e.historique || []).map(function(h){
-    return '<div class="ligne" style="padding-left:26px">' +
-      '<div class="corps"><div class="titre" style="font-weight:500">' + moisLisible(h.mois) + '</div>' +
-      '<div class="detail">' + h.sessions + ' caisses validées, dont ' +
-        h.sessions_fermeture + ' en fermeture · ' + h.sessions_deficit + ' avec un manquant' +
-        (Number(h.ecart_fermeture) ? ' · ' + eur(h.ecart_fermeture) + ' manquant en fermeture' : '') +
-        '</div></div>' +
-      '<div style="text-align:right"><div class="montant num negatif">' +
-        eur(h.ecart_par_session) + '</div>' +
-      '<div class="detail">par caisse</div></div></div>';
+      '<div class="montant num negatif">' + eur(f.ecart) + '</div></div>';
   }).join("");
 
-  return '<div class="bloc">' +
-    '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
-      '<div class="corps"><div class="titre">' + esc(e.nom_affiche || e.responsable) +
-        ' <span class="etiquette ' + teinte + '">' + part + ' % de caisses en manque</span></div>' +
-      '<div class="detail">' + e.sessions + ' caisses validées ce mois-ci · ' +
-        'manquant total ' + eur(e.ecart_total) +
-        (e.ecarts ? ' · ' + e.ecarts.ecarts + ' écart(s) ouvert(s) sur ' +
-                    e.ecarts.jours + ' jour(s)' : '') + '</div></div>' +
-      '<div style="text-align:right"><div class="montant num negatif">' +
-        eur(e.ecart_par_session) + '</div><div class="detail">par caisse</div></div>' +
+  const lignesMois = hist.map(function(h){
+    return '<div class="ligne"><div class="corps">' +
+      '<div class="titre" style="font-weight:500">' + moisLisible(h.mois) + '</div>' +
+      '<div class="detail">' + h.sessions + ' caisses validées · ' +
+        (h.part_deficit || 0) + ' % en manque</div></div>' +
+      '<div class="montant num negatif">' + eur(h.ecart_par_session) + '</div></div>';
+  }).join("");
+
+  return '<div class="carte ' + e.feu + '">' +
+    '<button class="tete" onclick="basculer(\'' + id + '\')">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="nom">' + esc(e.nom) + '</div>' +
+        '<div class="verdict">' + esc(e.verdict) + '</div></div>' +
+      '<span class="pastille ' + e.feu + '">' + MOT_FEU[e.feu] + '</span>' +
     '</button>' +
+    '<div class="chiffres">' +
+      '<div><b>' + e.sessions + '</b><span>caisses validées</span></div>' +
+      '<div><b>' + (e.part_deficit || 0) + ' %</b><span>en manque</span></div>' +
+      '<div><b class="montant negatif">' + eur0(e.ecart_total) + '</b><span>sur le mois</span></div>' +
+    '</div>' +
     '<div id="' + id + '" style="display:none">' +
-      '<div class="explication">Chaque ligne est un mois. Un écart moyen qui se maintient ' +
-        'ou s\'aggrave d\'un mois sur l\'autre compte davantage qu\'un mauvais mois isolé. ' +
-        'Un mois seul ne dit rien.</div>' +
-      hist + '</div></div>';
+      '<div id="ia' + id + '"></div>' +
+      '<div style="padding:12px 16px"><button class="fort" style="padding:9px 14px;' +
+        'border-radius:7px;background:var(--profond);color:#fff;font-size:14px;font-weight:600" ' +
+        'onclick="expliquer(\'' + e.code + '\',\'' + id + '\',this)">Expliquer ce cas</button></div>' +
+      (lignesMois ? '<div class="sectionnette">Mois par mois</div>' + lignesMois : "") +
+      (lignesFaits ? '<div class="sectionnette">Les comptages concernés</div>' + lignesFaits : "") +
+    '</div></div>';
+}
+
+async function expliquer(code, id, bouton) {
+  const zone = document.getElementById("ia" + id);
+  bouton.disabled = true; bouton.textContent = "Analyse en cours…";
+  try {
+    const d = await api("analyse", "expliquer",
+      { restaurant_id: E.an.restaurant_id, mois: E.an.mois, code: code });
+    zone.innerHTML = '<div class="ia"><span class="marque">Lecture de la situation</span>' +
+      esc(d.texte).replace(/\n/g, "<br>") + '</div>';
+    bouton.parentElement.style.display = "none";
+  } catch (e) {
+    zone.innerHTML = '<div class="alerte erreur" style="margin:12px 16px">' + esc(e.message) + '</div>';
+    bouton.disabled = false; bouton.textContent = "Réessayer";
+  }
 }
 
 /* ---------- dépôt ---------- */
@@ -655,7 +458,7 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
   const initial = bouton.textContent;
   bouton.textContent = "…";
 
-  let ok = 0, lignesLues = 0, ecarts = 0, aQualifier = 0;
+  let ok = 0, lignesLues = 0, aQualifier = 0;
   const soucis = [];
   for (const f of fichiers) {
     detail.textContent = "envoi de " + f.name + "…";
@@ -668,7 +471,6 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
       const bonneCase = recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES");
       if (!bonneCase) soucis.push(f.name + " contient un rapport " + recu + " : rangé au bon endroit");
       ok++; lignesLues += d.nb || 0;
-      if (d.anomalies && d.anomalies.creees) ecarts += d.anomalies.creees;
       if (d.libelles_a_qualifier) aQualifier += d.libelles_a_qualifier.length;
     } catch (e) { soucis.push(f.name + " : " + e.message); }
   }
@@ -685,7 +487,7 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
     detail.innerHTML = '<span style="color:var(--rouge)">' + esc(soucis.join(" · ")) + '</span>';
   }
   bouton.disabled = false;
-  annoncer(ecarts, aQualifier);
+  annoncer(aQualifier);
 }
 
 function majJauge(n) {
@@ -695,14 +497,11 @@ function majJauge(n) {
   if (c) c.textContent = E.faits + " sur " + E.attendus;
 }
 
-function annoncer(ecarts, aQualifier) {
-  E.bilan = { ecarts: (E.bilan ? E.bilan.ecarts : 0) + ecarts,
-              qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
+function annoncer(aQualifier) {
+  E.bilan = { qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
   const b = document.getElementById("bilan");
-  if (!b || (!E.bilan.ecarts && !E.bilan.qualif)) return;
-  const p = [];
-  if (E.bilan.ecarts) p.push('<a href="#" onclick="aller(\'anomalies\');return false">' +
-    E.bilan.ecarts + ' écart(s) détecté(s)</a>');
+  if (!b) return;
+  const p = ['<a href="#" onclick="aller(\'analyse\');return false">Voir l\'analyse</a>'];
   if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'libelles\');return false">' +
     E.bilan.qualif + ' remise(s) à qualifier</a>');
   b.innerHTML = '<div class="alerte info">' + p.join(" · ") + '</div>';
@@ -710,10 +509,6 @@ function annoncer(ecarts, aQualifier) {
 
 /* ---------- remises ---------- */
 
-/* Une centaine de libellés par mois, presque tous nationaux : on
-   qualifie par famille, et on ne descend au libellé que pour le
-   paramétrage local, seul endroit où un libellé peut avoir été créé
-   dans le restaurant. */
 async function vueLibelles() {
   const d = await api("audit", "libellesAQualifier");
   const familles = {};
