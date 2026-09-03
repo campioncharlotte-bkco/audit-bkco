@@ -523,6 +523,18 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
     } catch (e) { soucis.push(f.name + " : " + e.message); }
   }
 
+  // La détection tourne dans un appel séparé, avec son propre budget de temps :
+  // enchaînée au dépôt, elle faisait dépasser la limite sur les gros rapports.
+  let ecarts = 0;
+  if (ok) {
+    detail.textContent = "analyse en cours…";
+    try {
+      const a = await api("import", "analyser",
+        { restaurant_id: rid, debut: bornes[0], fin: bornes[1] });
+      ecarts = (a.anomalies && a.anomalies.creees) || 0;
+    } catch (e) { soucis.push("analyse : " + e.message); }
+  }
+
   if (ok) {
     ligne.dataset.fait = "1";
     bouton.textContent = "Remplacer";
@@ -535,7 +547,7 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
     detail.innerHTML = '<span style="color:var(--rouge)">' + esc(soucis.join(" · ")) + '</span>';
   }
   bouton.disabled = false;
-  annoncer(aQualifier);
+  annoncer(aQualifier, ecarts);
 }
 
 function majJauge(n) {
@@ -545,11 +557,13 @@ function majJauge(n) {
   if (c) c.textContent = E.faits + " sur " + E.attendus;
 }
 
-function annoncer(aQualifier) {
-  E.bilan = { qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
+function annoncer(aQualifier, ecarts) {
+  E.bilan = { qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier,
+              ecarts: (E.bilan ? E.bilan.ecarts : 0) + (ecarts || 0) };
   const b = document.getElementById("bilan");
   if (!b) return;
-  const p = ['<a href="#" onclick="aller(\'analyse\');return false">Voir l\'analyse</a>'];
+  const p = ['<a href="#" onclick="aller(\'analyse\');return false">Voir l\'analyse' +
+    (E.bilan.ecarts ? " · " + E.bilan.ecarts + " écart(s) détecté(s)" : "") + '</a>'];
   if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'libelles\');return false">' +
     E.bilan.qualif + ' remise(s) à qualifier</a>');
   b.innerHTML = '<div class="alerte info">' + p.join(" · ") + '</div>';
