@@ -96,6 +96,16 @@ button.ligne:hover{background:var(--papier)}
 .chiffres span{font-size:11.5px;color:var(--ardoise)}
 .ia{padding:14px 16px;background:#eef2f6;color:var(--profond);font-size:14px;line-height:1.55;
   border-top:1px solid var(--filet)}
+.raison{padding:4px 16px 14px}
+.trait{display:flex;gap:9px;align-items:flex-start;padding:7px 0;font-size:13.5px;line-height:1.5}
+.trait .marqueur{flex:0 0 auto;width:16px;text-align:center;font-weight:700;margin-top:1px}
+.trait.charge .marqueur{color:var(--rouge)}
+.trait.faveur .marqueur{color:var(--vert)}
+.trait.neutre .marqueur{color:var(--ardoise)}
+.trait.neutre{color:var(--ardoise)}
+.evolution{padding:10px 16px;font-size:13.5px;border-top:1px solid var(--filet);
+  display:flex;gap:8px;align-items:baseline}
+.evolution b{font-variant-numeric:tabular-nums}
 .ia .marque{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;
   opacity:.65;margin-bottom:6px}
 .sectionnette{padding:9px 16px;background:var(--papier);font-size:12px;font-weight:700;
@@ -311,26 +321,59 @@ async function vueAnalyse(params) {
 
 function carteEncadrant(e) {
   const id = "c" + String(e.code).replace(/[^A-Za-z0-9]/g, "");
-  const hist = (e.historique || []).slice(-6);
+  const hist = (e.historique || []).slice(-12);
+
+  /* Le raisonnement est affiché, pas déduit : chaque ligne est une
+     comparaison, en rouge si elle joue en défaveur, en vert si elle joue
+     en faveur. Un directeur doit pouvoir contester une ligne précise. */
+  const traits = (e.traits || []).map(function(t){
+    const m = t.sens === "charge" ? "▲" : t.sens === "faveur" ? "▼" : "•";
+    return '<div class="trait ' + t.sens + '"><span class="marqueur">' + m + '</span>' +
+      '<span>' + esc(t.texte) + '</span></div>';
+  }).join("");
+
+  /* Le mois précédent du même encadrant, affiché sans dépliage : c'est
+     souvent le signal le plus parlant et il était enterré. */
+  const p = e.precedent;
+  let evolution = "";
+  if (p) {
+    const av = Number(p.ecart_par_session) || 0, ap = Number(e.ecart_par_session) || 0;
+    const sens = Math.abs(ap) > Math.abs(av) * 1.3 ? "aggrave"
+               : Math.abs(ap) < Math.abs(av) * 0.7 ? "ameliore" : "stable";
+    const mot = { aggrave:"en nette hausse", ameliore:"en amélioration", stable:"stable" }[sens];
+    const coul = sens === "aggrave" ? "var(--rouge)" : sens === "ameliore" ? "var(--vert)" : "var(--ardoise)";
+    evolution = '<div class="evolution"><span style="color:var(--ardoise)">Par rapport à ' +
+      moisLisible(p.mois) + '</span><b style="margin-left:auto">' + eur(p.ecart_par_session) +
+      ' → ' + eur(e.ecart_par_session) + '</b>' +
+      '<span style="color:' + coul + ';font-weight:600">' + mot + '</span></div>';
+  }
 
   const lignesFaits = (e.faits || []).map(function(f){
     const reste = resteCamera(f.echeance_camera);
+    const camera = reste === null ? "" :
+      reste < 0 ? " · images perdues" :
+      reste === 0 ? " · caméra : dernier jour" :
+      reste <= 4 ? " · caméra : encore " + reste + " j" : "";
     return '<div class="ligne"><div class="corps">' +
       '<div class="titre" style="font-weight:500">' + jour(f.date) + ' · ' +
         esc(f.equipier || "caisse non identifiée") + '</div>' +
       '<div class="detail">' + esc(momentLisible(f.shift)) + ' · caisse ' + esc(f.caisse || "—") +
-        (reste !== null && reste >= 0 ? ' · caméra encore disponible ' + reste + ' j' : '') +
-        '</div></div>' +
+        camera + '</div></div>' +
       '<div class="montant num negatif">' + eur(f.ecart) + '</div></div>';
   }).join("");
 
   const lignesMois = hist.map(function(h){
-    return '<div class="ligne"><div class="corps">' +
+    const courant = h.mois === e.historique[e.historique.length - 1].mois;
+    return '<div class="ligne"' + (courant ? ' style="background:var(--papier)"' : '') +
+      '><div class="corps">' +
       '<div class="titre" style="font-weight:500">' + moisLisible(h.mois) + '</div>' +
       '<div class="detail">' + h.sessions + ' caisses validées · ' +
         (h.part_deficit || 0) + ' % en manque</div></div>' +
       '<div class="montant num negatif">' + eur(h.ecart_par_session) + '</div></div>';
   }).join("");
+
+  const partResto = e.part_deficit_moyenne === null || e.part_deficit_moyenne === undefined
+    ? "" : Math.round(e.part_deficit_moyenne) + " % en moyenne";
 
   return '<div class="carte ' + e.feu + '">' +
     '<button class="tete" onclick="basculer(\'' + id + '\')">' +
@@ -340,17 +383,22 @@ function carteEncadrant(e) {
       '<span class="pastille ' + e.feu + '">' + MOT_FEU[e.feu] + '</span>' +
     '</button>' +
     '<div class="chiffres">' +
+      '<div><b class="montant negatif">' + eur(e.ecart_par_session) + '</b>' +
+        '<span>par caisse</span></div>' +
+      '<div><b>' + eur(e.mediane_pairs) + '</b><span>médiane du restaurant</span></div>' +
       '<div><b>' + e.sessions + '</b><span>caisses validées</span></div>' +
-      '<div><b>' + (e.part_deficit || 0) + ' %</b><span>en manque</span></div>' +
-      '<div><b class="montant negatif">' + eur0(e.ecart_total) + '</b><span>sur le mois</span></div>' +
     '</div>' +
+    (traits ? '<div class="raison">' + traits + '</div>' : "") +
+    evolution +
     '<div id="' + id + '" style="display:none">' +
       '<div id="ia' + id + '"></div>' +
-      '<div style="padding:12px 16px"><button class="fort" style="padding:9px 14px;' +
+      '<div style="padding:12px 16px"><button style="padding:9px 14px;' +
         'border-radius:7px;background:var(--profond);color:#fff;font-size:14px;font-weight:600" ' +
         'onclick="expliquer(\'' + e.code + '\',\'' + id + '\',this)">Expliquer ce cas</button></div>' +
-      (lignesMois ? '<div class="sectionnette">Mois par mois</div>' + lignesMois : "") +
-      (lignesFaits ? '<div class="sectionnette">Les comptages concernés</div>' + lignesFaits : "") +
+      (lignesMois ? '<div class="sectionnette">Mois par mois' +
+        (partResto ? ' · le restaurant est à ' + partResto : '') + '</div>' + lignesMois : "") +
+      (lignesFaits ? '<div class="sectionnette">Les ' + e.nb_faits +
+        ' comptages en manque</div>' + lignesFaits : "") +
     '</div></div>';
 }
 
