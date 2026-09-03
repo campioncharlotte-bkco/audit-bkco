@@ -105,6 +105,9 @@ textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
 .explication{padding:11px 14px;background:#eef2f6;color:var(--profond);
   font-size:13.5px;line-height:1.45;border-bottom:1px solid var(--filet)}
 .chargement{color:var(--ardoise);padding:30px;text-align:center}
+.barre{height:4px;background:var(--filet);border-radius:2px;overflow:hidden;
+  margin-top:6px;width:120px;margin-left:auto}
+.barre span{display:block;height:100%;background:var(--rouge)}
 </style>
 </head>
 <body>
@@ -141,6 +144,7 @@ const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",mont
 const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin",
                  "juillet","août","septembre","octobre","novembre","décembre"];
+const moisLisible = m => m ? MOIS_FR[Number(m.slice(5,7)) - 1] + " " + m.slice(0,4) : "";
 
 async function api(fichier, action, params = {}) {
   const r = await fetch("/api/" + fichier, {
@@ -180,7 +184,7 @@ async function demarrer() {
   $("#connexion").style.display = "none";
   $("#app").style.display = "block";
   $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [["anomalies","À vérifier","!"],["encadrants","Encadrants","▲"],
+  const onglets = [["anomalies","À vérifier","!"],["caisses","Caisses","▣"],
                    ["depot","Dépôt","+"],["libelles","Remises","%"],["equipe","Équipe","•"]];
   if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
   $("#nav").innerHTML = onglets.map(function(o){
@@ -197,17 +201,34 @@ function aller(onglet, params) {
   document.querySelectorAll("#nav button").forEach(function(b){
     b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
   $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
-  ({ anomalies:vueAnomalies, encadrants:vueEncadrants, depot:vueDepot,
+  ({ anomalies:vueAnomalies, caisses:vueCaisses, depot:vueDepot,
      libelles:vueLibelles, equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
 }
 const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
 const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
+const nomLisible = code => (E.noms && E.noms[code]) || code || "—";
+
+function basculer(id) {
+  const e = document.getElementById(id);
+  e.style.display = e.style.display === "none" ? "block" : "none";
+}
+
+function momentLisible(s) {
+  return { OUVERTURE:"ouverture · ", JOURNEE:"journée · ", FERMETURE:"fermeture · " }[s] || "";
+}
 
 /* ---------- à vérifier ---------- */
 
 function resteCamera(echeance) {
   if (!echeance) return null;
   return Math.ceil((new Date(echeance) - new Date()) / 86400000);
+}
+
+function etiquetteCamera(reste) {
+  if (reste === null) return "";
+  if (reste < 0) return '<span class="etiquette expire">images perdues</span>';
+  if (reste <= 4) return '<span class="etiquette urgent">' + reste + ' j pour la caméra</span>';
+  return '<span class="etiquette">' + reste + ' j</span>';
 }
 
 function libelleRegle(a) {
@@ -227,12 +248,8 @@ function libelleRegle(a) {
   }[r] || r || "Écart";
 }
 
-/* On regarde d'abord les responsables : ce sont eux qui valident les
-   comptages, les annulations et les remises. Un écart isolé ne dit rien,
-   un responsable qui revient chaque semaine dit quelque chose. */
-
 const EXPLICATIONS = {
-  SESSION_ECART_ESPECES: "À la fermeture d'une caisse, l'argent compté est inférieur à ce que la caisse a enregistré. Le responsable nommé est celui qui a compté et validé.",
+  SESSION_ECART_ESPECES: "À la fermeture d'une caisse, l'argent compté est inférieur à ce que la caisse a enregistré, sans qu'un autre mode de règlement ne reprenne la différence. Le responsable nommé est celui qui a compté et validé.",
   SESSION_ECART_TARDIF: "Même chose, sur une caisse fermée après 22 h — le créneau où les contrôles sont les plus rares.",
   ANNUL_DELAI: "Un ticket a été annulé plusieurs heures après l'encaissement, alors que la procédure demande de le faire aussitôt. Ce délai permet de choisir après coup les tickets à annuler.",
   REMISE_LIBELLE_INCONNU: "Une remise a été appliquée avec un libellé qui n'a pas encore été qualifié. Qualifiez-le dans l'onglet Remises s'il est légitime.",
@@ -244,6 +261,9 @@ const EXPLICATIONS = {
   TEND_STABLE_HAUT: "Ce ratio reste durablement au-dessus de la moyenne du restaurant."
 };
 
+/* On regarde d'abord les responsables : ce sont eux qui valident les
+   comptages, les annulations et les remises. Un écart isolé ne dit rien,
+   un nom qui revient chaque semaine dit quelque chose. */
 async function vueAnomalies(params) {
   const axe = (params && params.axe) || E.axe || "manager";
   E.axe = axe;
@@ -294,13 +314,9 @@ function blocPersonne(g, axe) {
   const types = Object.keys(parType);
   const resume = types.map(function(t){ return parType[t] + " " + nomCourt(t, parType[t]); }).join(" · ");
   const nbJours = Object.keys(g.jours).length;
-  const urg = g.urgence === null ? "" :
-    g.urgence < 0 ? '<span class="etiquette expire">images perdues</span>' :
-    g.urgence <= 4 ? '<span class="etiquette urgent">' + g.urgence + ' j pour la caméra</span>' :
-    '<span class="etiquette">' + g.urgence + ' j</span>';
   const titre = g.qui === "—"
     ? (axe === "manager" ? "Sans responsable identifié" : "Sans équipier identifié")
-    : esc((E.noms && E.noms[g.qui]) || g.qui);
+    : esc(nomLisible(g.qui));
 
   return '<div class="bloc">' +
     '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
@@ -308,7 +324,7 @@ function blocPersonne(g, axe) {
       '<div class="detail">' + esc(resume) + ' · sur ' + nbJours + ' jour(s)' +
         (g.fermetures ? ' · dont ' + g.fermetures + ' en fermeture' : '') + '</div></div>' +
       '<div style="text-align:right"><div class="montant num">' + eur(g.cumul) + '</div>' +
-      '<div style="margin-top:4px">' + urg + '</div></div>' +
+      '<div style="margin-top:4px">' + etiquetteCamera(g.urgence) + '</div></div>' +
     '</button>' +
     '<div id="' + id + '" style="display:none">' +
       types.map(function(t){
@@ -321,18 +337,14 @@ function blocPersonne(g, axe) {
                   jour(a.periode_debut) + ' · ' + esc(nomCourt(t, 1)) + '</div>' +
                 '<div class="detail">' + esc(momentLisible(a.shift)) +
                   esc(nomResto(a.restaurant_id)) +
-                  (axe === "manager" && a.badge_code ? " · caisse de " + esc(a.badge_code) : "") +
-                  (axe === "equipier" && a.manager_code ? " · validé par " + esc(a.manager_code) : "") +
+                  (axe === "manager" && a.badge_code ? " · caisse de " + esc(nomLisible(a.badge_code)) : "") +
+                  (axe === "equipier" && a.manager_code ? " · validé par " + esc(nomLisible(a.manager_code)) : "") +
                   '</div></div>' +
                 '<div class="montant num ' + (a.montant_ttc < 0 ? "negatif" : "") + '">' +
                   eur(a.montant_ttc) + '</div></button>';
             }).join("");
       }).join("") +
     '</div></div>';
-}
-
-function momentLisible(s) {
-  return { OUVERTURE:"ouverture · ", JOURNEE:"journée · ", FERMETURE:"fermeture · " }[s] || "";
 }
 
 function nomCourt(regle, n) {
@@ -398,30 +410,126 @@ async function majAnomalie(id, statut) {
   aller("anomalies");
 }
 
-/* ---------- encadrants ---------- */
+/* ---------- caisses ---------- */
 
-/* Comparer des montants bruts n'a pas de sens : celui qui valide 180
-   caisses accumule plus d'écarts que celui qui en valide 40. On classe
-   donc sur l'écart moyen par session, et on affiche la part de sessions
-   déficitaires, qui ne dépend ni du volume ni des montants. */
-async function vueEncadrants(params) {
-  const d = await api("audit", "encadrants", params || {});
-  if (!d.encadrants.length) { $("#vue").innerHTML =
-    '<div class="vide"><b>Aucune donnée</b>Déposez les déclarations de caisse ' +
-    'pour voir les encadrants.</div>'; return; }
+/* Trois angles sur la même donnée : la session, la caisse, l'encadrant.
+   Aucun ne se lit en montant brut — celui qui valide 180 caisses accumule
+   mécaniquement plus d'écarts que celui qui en valide 40, et la caisse la
+   plus utilisée sort toujours en tête d'un cumul. On classe donc sur des
+   taux et des moyennes par session. */
+async function vueCaisses(params) {
+  const p = params || {};
+  E.caisses = { vue: p.vue || (E.caisses && E.caisses.vue) || "sessions",
+                restaurant_id: p.restaurant_id || (E.caisses && E.caisses.restaurant_id) || null,
+                mois: p.mois !== undefined ? p.mois : (E.caisses && E.caisses.mois) || null };
+  const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
+  if (!restos.length) { $("#vue").innerHTML =
+    '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de lecture.</div>'; return; }
+  const rid = E.caisses.restaurant_id || restos[0].id;
+  E.caisses.restaurant_id = rid;
+
+  const d = await api("audit", "caisses", { restaurant_id:rid, mois:E.caisses.mois });
+  E.noms = Object.assign({}, E.noms, d.noms || {});
+  E.caisses.mois = d.mois;
+  const v = E.caisses.vue;
+
+  const selecteurs =
+    '<div class="duo">' +
+      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'caisses\',' +
+        '{restaurant_id:Number(this.value),mois:null})">' +
+        restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
+          '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
+      (d.mois_disponibles.length ? '<label class="champ"><span>Mois</span>' +
+        '<select onchange="aller(\'caisses\',{mois:this.value})">' +
+        d.mois_disponibles.map(m => '<option value="' + m + '"' +
+          (m === d.mois ? " selected" : "") + '>' + moisLisible(m) + '</option>').join("") +
+        '</select></label>' : '') +
+    '</div>';
+
+  const onglets = [["sessions","Sessions"],["caisses","Par caisse"],["encadrants","Par encadrant"]];
+  const barre = '<div class="actions" style="margin:0 0 16px">' +
+    onglets.map(o => '<button' + (v === o[0] ? ' class="fort"' : '') +
+      ' onclick="aller(\'caisses\',{vue:\'' + o[0] + '\'})">' + o[1] + '</button>').join("") +
+    '</div>';
+
+  const corps = v === "caisses" ? vueParCaisse(d)
+              : v === "encadrants" ? vueParEncadrant(d)
+              : vueParSession(d);
 
   $("#vue").innerHTML =
-    '<h2>Encadrants</h2>' +
-    '<p class="sous">Qui valide les comptages de caisse, et avec quel résultat. ' +
-      'Le classement se fait sur l\'écart moyen par session : comparer les montants ' +
-      'bruts avantagerait ceux qui valident le moins de caisses.</p>' +
-    (d.mois_disponibles.length > 1 ? '<label class="champ"><span>Mois</span>' +
-      '<select onchange="aller(\'encadrants\',{mois:this.value})">' +
-      d.mois_disponibles.map(m => '<option value="' + m + '"' +
-        (m === d.mois ? " selected" : "") + '>' +
-        MOIS_FR[Number(m.slice(5,7)) - 1] + " " + m.slice(0,4) + '</option>').join("") +
-      '</select></label>' : '') +
-    d.encadrants.map(ligneEncadrant).join("");
+    '<h2>Écarts de caisse</h2>' +
+    '<p class="sous">Toutes les sessions dont le comptage espèces manque de plus de 20 €. ' +
+      'Rien ici n\'est une accusation : c\'est la liste de ce qui reste à expliquer.</p>' +
+    selecteurs + barre + corps;
+}
+
+/* Une session dont le manquant espèces est repris à l'euro près par la CB
+   ou le TPE n'est pas un manquant : c'est un encaissement saisi dans le
+   mauvais mode. Ces sessions sont montrées à part, repliées. */
+function vueParSession(d) {
+  const ligne = s => {
+    const reste = resteCamera(s.echeance_camera);
+    return '<div class="ligne"><div class="corps">' +
+      '<div class="titre">' + jour(s.date_fiscale) + ' · ' + esc(nomLisible(s.badge_code)) + '</div>' +
+      '<div class="detail">' + esc(momentLisible(s.shift)) + 'caisse ' + esc(s.caisse || "—") +
+        (s.responsable ? ' · validé par ' + esc(nomLisible(s.responsable)) : '') +
+        (Number(s.nb_remise) ? ' · ' + s.nb_remise + ' remise(s)' : '') +
+        (Number(s.nb_annulation) ? ' · ' + s.nb_annulation + ' annulation(s)' : '') +
+        '</div></div>' +
+      '<div style="text-align:right"><div class="montant num negatif">' +
+        eur(s.ecart_especes) + '</div>' +
+      '<div style="margin-top:4px">' + etiquetteCamera(reste) + '</div></div></div>';
+  };
+  const total = d.sessions.reduce((t,s) => t + Number(s.ecart_especes || 0), 0);
+
+  return (d.sessions.length
+    ? '<div class="bloc">' +
+        '<div class="explication">' + d.sessions.length + ' session(s) pour ' + eur(total) +
+          ' manquants, non repris par un autre mode de règlement. Les plus récentes sont ' +
+          'encore dans la fenêtre de 14 jours des caméras.</div>' +
+        d.sessions.map(ligne).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun manquant sur ce mois</b>' +
+      'Tous les écarts de comptage sont sous 20 € ou repris par un autre mode de règlement.</div></div>') +
+  (d.compensees.length
+    ? '<div class="bloc">' +
+        '<button class="ligne" onclick="basculer(\'compensees\')">' +
+          '<div class="corps"><div class="titre">' + d.compensees.length +
+            ' écart(s) repris par la CB ou le TPE</div>' +
+          '<div class="detail">Le comptage espèces manque, mais un autre mode de règlement ' +
+            'reprend la différence : erreur de saisie, pas de perte.</div></div>' +
+          '<span class="etiquette ok">sans suite</span></button>' +
+        '<div id="compensees" style="display:none">' + d.compensees.map(ligne).join("") + '</div>' +
+      '</div>' : "");
+}
+
+/* Le taux de sessions en écart, pas le cumul : deux caisses à volume
+   comparable et à taux très différents désignent un poste, pas une
+   personne. C'est le seul écart structurel qu'on sache lire aujourd'hui. */
+function vueParCaisse(d) {
+  if (!d.caisses.length) return '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
+    'Déposez les déclarations de caisse du mois.</div></div>';
+  const pire = Math.max.apply(null, d.caisses.map(c => Number(c.taux_lourdes) || 0)) || 1;
+  return '<div class="bloc">' +
+    '<div class="explication">Chaque ligne est une caisse. Comparez le taux, pas le cumul : ' +
+      'la caisse la plus utilisée accumule mécaniquement plus d\'écarts. Deux caisses à volume ' +
+      'proche et à taux très différents désignent un poste ou une procédure, pas une personne.</div>' +
+    d.caisses.map(function(c){
+      const taux = Number(c.taux_lourdes) || 0;
+      return '<div class="ligne"><div class="corps">' +
+        '<div class="titre">' + esc(c.caisse || "caisse non identifiée") + '</div>' +
+        '<div class="detail">' + c.sessions + ' session(s) · ' + c.lourdes +
+          ' au-delà de 20 € · cumul ' + eur(c.ecart_cumule) + '</div></div>' +
+        '<div style="text-align:right"><div class="montant num' + (taux >= 10 ? " negatif" : "") + '">' +
+          taux.toLocaleString("fr-FR") + ' %</div>' +
+        '<div class="barre"><span style="width:' + (taux / pire * 100) + '%"></span></div>' +
+        '<div class="detail">' + eur(c.ecart_moyen) + ' par session</div></div></div>';
+    }).join("") + '</div>';
+}
+
+function vueParEncadrant(d) {
+  if (!d.encadrants.length) return '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
+    'Déposez les déclarations de caisse du mois.</div></div>';
+  return d.encadrants.map(ligneEncadrant).join("");
 }
 
 function ligneEncadrant(e) {
@@ -430,8 +538,7 @@ function ligneEncadrant(e) {
   const teinte = part >= 55 ? "expire" : part >= 45 ? "urgent" : "ok";
   const hist = (e.historique || []).map(function(h){
     return '<div class="ligne" style="padding-left:26px">' +
-      '<div class="corps"><div class="titre" style="font-weight:500">' +
-        MOIS_FR[Number(h.mois.slice(5,7)) - 1] + " " + h.mois.slice(0,4) + '</div>' +
+      '<div class="corps"><div class="titre" style="font-weight:500">' + moisLisible(h.mois) + '</div>' +
       '<div class="detail">' + h.sessions + ' caisses validées, dont ' +
         h.sessions_fermeture + ' en fermeture · ' + h.sessions_deficit + ' avec un manquant' +
         (Number(h.ecart_fermeture) ? ' · ' + eur(h.ecart_fermeture) + ' manquant en fermeture' : '') +
@@ -454,7 +561,8 @@ function ligneEncadrant(e) {
     '</button>' +
     '<div id="' + id + '" style="display:none">' +
       '<div class="explication">Chaque ligne est un mois. Un écart moyen qui se maintient ' +
-        'ou s\'aggrave d\'un mois sur l\'autre compte davantage qu\'un mauvais mois isolé.</div>' +
+        'ou s\'aggrave d\'un mois sur l\'autre compte davantage qu\'un mauvais mois isolé. ' +
+        'Un mois seul ne dit rien.</div>' +
       hist + '</div></div>';
 }
 
@@ -622,6 +730,7 @@ async function vueLibelles() {
       'paramétrage local, seul endroit où une remise peut avoir été créée dans le restaurant.</p>' +
     (noms.length ? noms.map(function(f){
       const l = familles[f], ids = l.map(x => x.id).join(",");
+      const cle = "g" + f.replace(/[^a-zA-Z0-9]/g,"");
       return '<div class="bloc"><div class="ligne"><div class="corps">' +
         '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length + ' libellé(s)</span></div>' +
         '<div class="detail">' + esc(l.slice(0,3).map(x => x.libelle).join(" · ")) +
@@ -629,9 +738,9 @@ async function vueLibelles() {
         '<div class="actions">' +
         '<button onclick="qualifierLot([' + ids + '],\'AUTORISE\',0)">Toute la famille est normale</button>' +
         '<button onclick="qualifierLot([' + ids + '],\'OPERATION\',1)">Opération commerciale</button>' +
-        '<button onclick="basculer(\'g' + esc(f).replace(/[^a-zA-Z]/g,"") + '\')">Voir le détail</button>' +
+        '<button onclick="basculer(\'' + cle + '\')">Voir le détail</button>' +
         '</div></div></div>' +
-        '<div id="g' + esc(f).replace(/[^a-zA-Z]/g,"") + '" style="display:none">' +
+        '<div id="' + cle + '" style="display:none">' +
         l.map(function(x){
           return '<div class="ligne"><div class="corps"><div class="titre">' + esc(x.libelle) + '</div>' +
             '<div class="detail">Vu du ' + jour(x.premiere_vue) + ' au ' + jour(x.derniere_vue) + '</div>' +
@@ -644,11 +753,6 @@ async function vueLibelles() {
     }).join("")
     : '<div class="bloc"><div class="vide"><b>Tout est qualifié</b>' +
       'Aucune nouvelle remise depuis le dernier dépôt.</div></div>');
-}
-
-function basculer(id) {
-  const e = document.getElementById(id);
-  e.style.display = e.style.display === "none" ? "block" : "none";
 }
 
 async function qualifierLot(ids, statut, neutralise) {
