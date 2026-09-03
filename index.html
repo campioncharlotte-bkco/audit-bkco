@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#1a2028">
+<meta name="theme-color" content="#243b53">
 <title>Audit BKCO</title>
 <style>
 :root{
@@ -13,36 +13,28 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{
-  background:var(--papier); color:var(--encre);
+body{background:var(--papier);color:var(--encre);
   font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  -webkit-font-smoothing:antialiased;
-}
-/* les montants s'alignent : c'est un outil de colonnes de chiffres */
+  -webkit-font-smoothing:antialiased}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none}
-a{color:var(--profond)}
+select,input,textarea{background:var(--surface)}
 
-/* ---------- connexion ---------- */
 #connexion{min-height:100dvh;display:grid;place-items:center;padding:24px}
 .carte-connexion{width:100%;max-width:340px}
 .carte-connexion h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
 .carte-connexion p{color:var(--ardoise);margin:0 0 28px;font-size:14px}
 .champ{display:block;margin-bottom:14px}
 .champ span{display:block;font-size:13px;color:var(--ardoise);margin-bottom:5px}
-.champ input{width:100%;padding:11px 12px;border:1px solid var(--filet);
-  border-radius:7px;background:var(--surface)}
-.champ input:focus{outline:2px solid var(--profond);outline-offset:1px;border-color:transparent}
-.principal{width:100%;padding:12px;border-radius:7px;background:var(--profond);
-  color:#fff;font-weight:600}
+.champ input,.champ select{width:100%;padding:11px 12px;border:1px solid var(--filet);border-radius:7px}
+.champ input:focus,.champ select:focus{outline:2px solid var(--profond);outline-offset:1px}
+.principal{width:100%;padding:12px;border-radius:7px;background:var(--profond);color:#fff;font-weight:600}
 .principal:disabled{opacity:.5}
 
-/* ---------- ossature ---------- */
-#app{display:none;min-height:100dvh;padding-bottom:76px}
+#app{display:none;min-height:100dvh;padding-bottom:78px}
 header{position:sticky;top:0;z-index:10;background:var(--surface);
-  border-bottom:1px solid var(--filet);padding:12px 16px;
-  display:flex;align-items:center;gap:12px}
+  border-bottom:1px solid var(--filet);padding:12px 16px;display:flex;align-items:center;gap:12px}
 header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
 header .qui{margin-left:auto;font-size:13px;color:var(--ardoise)}
 main{max-width:940px;margin:0 auto;padding:18px 16px}
@@ -50,21 +42,18 @@ h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
 .sous{color:var(--ardoise);font-size:14px;margin:0 0 20px}
 
 nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);
-  border-top:1px solid var(--filet);display:flex;
-  padding-bottom:env(safe-area-inset-bottom)}
+  border-top:1px solid var(--filet);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--ardoise);
   display:flex;flex-direction:column;align-items:center;gap:3px}
 nav button b{font-size:16px;font-weight:400;line-height:1}
-nav button[aria-current="page"]{color:var(--profond);font-weight:600;
-  box-shadow:inset 0 2px 0 var(--profond)}
+nav button[aria-current="page"]{color:var(--profond);font-weight:600;box-shadow:inset 0 2px 0 var(--profond)}
 @media(min-width:800px){
   #app{padding-bottom:0}
   nav{position:sticky;top:53px;bottom:auto;border-top:0;border-bottom:1px solid var(--filet);
-    max-width:940px;margin:0 auto;padding:0}
+    max-width:940px;margin:0 auto}
   nav button{flex:0 0 auto;padding:12px 16px;font-size:14px;flex-direction:row;gap:7px}
 }
 
-/* ---------- listes ---------- */
 .bloc{background:var(--surface);border:1px solid var(--filet);border-radius:9px;
   overflow:hidden;margin-bottom:16px}
 .ligne{display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid var(--filet);
@@ -73,7 +62,7 @@ nav button[aria-current="page"]{color:var(--profond);font-weight:600;
 button.ligne:hover{background:var(--papier)}
 .ligne .corps{flex:1;min-width:0}
 .ligne .titre{font-weight:600;font-size:14.5px}
-.ligne .detail{color:var(--ardoise);font-size:13px;margin-top:2px}
+.ligne .detail{color:var(--ardoise);font-size:13px;margin-top:3px;word-break:break-word}
 .montant{font-weight:650;white-space:nowrap}
 .montant.negatif{color:var(--rouge)}
 
@@ -82,32 +71,33 @@ button.ligne:hover{background:var(--papier)}
 .etiquette.urgent{background:#f7ede0;color:var(--ambre)}
 .etiquette.expire{background:#f6e6e5;color:var(--rouge)}
 .etiquette.ok{background:#e6efea;color:var(--vert)}
+.ligne .titre .etiquette{margin-left:6px;vertical-align:1px}
 
 .vide{padding:40px 20px;text-align:center;color:var(--ardoise)}
 .vide b{display:block;color:var(--encre);margin-bottom:6px;font-size:15px}
 
-/* ---------- dépôt ---------- */
-.depot{border:1.5px dashed var(--filet);border-radius:9px;padding:26px 18px;
-  text-align:center;background:var(--surface)}
-.depot.actif{border-color:var(--profond);background:#f0f4f8}
-.journal{margin-top:14px;font-size:13.5px}
-.journal div{padding:7px 0;border-bottom:1px solid var(--filet);display:flex;gap:9px}
-.journal div:last-child{border-bottom:0}
-.journal .etat{flex:0 0 18px}
+.duo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.duo .champ{flex:1;min-width:170px;margin:0}
+.progression{margin-bottom:16px;font-size:14px;color:var(--ardoise)}
+.progression b{color:var(--encre)}
+.jauge{height:5px;background:var(--filet);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.jauge span{display:block;height:100%;background:var(--profond);transition:width .3s}
+.bouton-depot{flex:0 0 auto;align-self:center;padding:8px 14px;border:1px solid var(--filet);
+  border-radius:7px;background:var(--surface);font-size:13.5px;font-weight:600}
+.bouton-depot:hover{border-color:var(--profond);color:var(--profond)}
+.bouton-depot.fait{border:0;background:transparent;color:var(--ardoise);font-weight:500}
 
-/* ---------- détail ---------- */
 .retour{color:var(--ardoise);font-size:14px;margin-bottom:12px;padding:4px 0}
 dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:14px}
 dt{color:var(--ardoise)}
-dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
 .zone{padding:14px}
 textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
-  border-radius:7px;resize:vertical;background:var(--surface)}
+  border-radius:7px;resize:vertical}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
 .actions button{padding:9px 14px;border-radius:7px;border:1px solid var(--filet);
   background:var(--surface);font-size:14px;font-weight:500}
 .actions button.fort{background:var(--profond);color:#fff;border-color:var(--profond)}
-select{padding:9px 11px;border:1px solid var(--filet);border-radius:7px;background:var(--surface)}
 
 .alerte{padding:11px 13px;border-radius:7px;font-size:14px;margin-bottom:14px}
 .alerte.erreur{background:#f6e6e5;color:var(--rouge)}
@@ -141,15 +131,17 @@ select{padding:9px 11px;border:1px solid var(--filet);border-radius:7px;backgrou
 </div>
 
 <script>
-const E = {};                       // état de session
+const E = {};
 const $ = s => document.querySelector(s);
 const eur = n => (n === null || n === undefined ? "—" :
   Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
 const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}) : "—";
 const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+const MOIS_FR = ["janvier","février","mars","avril","mai","juin",
+                 "juillet","août","septembre","octobre","novembre","décembre"];
 
 async function api(fichier, action, params = {}) {
-  const r = await fetch(`/api/${fichier}`, {
+  const r = await fetch("/api/" + fichier, {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ action, jeton: E.jeton, ...params })
   });
@@ -174,14 +166,11 @@ async function seConnecter(ev) {
     E.jeton = d.jeton;
     await demarrer();
   } catch (e) {
-    $("#err-connexion").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`;
+    $("#err-connexion").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
   } finally { b.disabled = false; b.textContent = "Se connecter"; }
 }
 
-function seDeconnecter() {
-  localStorage.removeItem("jeton-audit");
-  location.reload();
-}
+function seDeconnecter() { localStorage.removeItem("jeton-audit"); location.reload(); }
 
 async function demarrer() {
   const d = await api("audit", "moi");
@@ -189,289 +178,325 @@ async function demarrer() {
   $("#connexion").style.display = "none";
   $("#app").style.display = "block";
   $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [
-    ["anomalies","À vérifier","!"],
-    ["depot","Dépôt","+"],
-    ["libelles","Remises","%"],
-    ["equipe","Équipe","•"]
-  ];
+  const onglets = [["anomalies","À vérifier","!"],["depot","Dépôt","+"],
+                   ["libelles","Remises","%"],["equipe","Équipe","•"]];
   if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
-  $("#nav").innerHTML = onglets.map(([c,l,i]) =>
-    `<button data-onglet="${c}" onclick="aller('${c}')"><b>${i}</b>${l}</button>`).join("");
+  $("#nav").innerHTML = onglets.map(function(o){
+    return '<button data-onglet="'+o[0]+'" onclick="aller(\''+o[0]+'\')"><b>'+o[2]+'</b>'+o[1]+'</button>';
+  }).join("");
   aller(E.droits.lecture.length ? "anomalies" : "depot");
 }
 
 function aller(onglet, params) {
+  if (onglet === "anomalies" && params && params.id) {
+    ouvrirAnomalie(params.id).catch(afficherErreur); return;
+  }
   E.onglet = onglet;
-  document.querySelectorAll("#nav button").forEach(b =>
-    b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"));
-  $("#vue").innerHTML = `<p class="chargement">Chargement…</p>`;
+  document.querySelectorAll("#nav button").forEach(function(b){
+    b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
   ({ anomalies:vueAnomalies, depot:vueDepot, libelles:vueLibelles,
      equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
 }
-const afficherErreur = e => $("#vue").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`;
+const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
 
-/* ---------- file d'anomalies ---------- */
+/* ---------- à vérifier ---------- */
 
 function resteCamera(echeance) {
   if (!echeance) return null;
   return Math.ceil((new Date(echeance) - new Date()) / 86400000);
 }
 
-async function vueAnomalies() {
-  const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
-  const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
-  const lignes = d.anomalies.map(a => {
-    const reste = resteCamera(a.echeance_camera);
-    const badge = reste === null ? "" :
-      reste < 0 ? `<span class="etiquette expire">images perdues</span>` :
-      reste <= 4 ? `<span class="etiquette urgent">${reste} j pour la caméra</span>` :
-      `<span class="etiquette">${reste} j</span>`;
-    return `<button class="ligne" onclick="aller('anomalies',{id:${a.id}})">
-      <div class="corps">
-        <div class="titre">${esc(libelleRegle(a))}</div>
-        <div class="detail">${esc(nomResto(a.restaurant_id))} · ${jour(a.periode_debut)}
-          ${a.badge_code ? "· " + esc(a.badge_code) : ""}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="montant num ${a.montant_ttc < 0 ? "negatif":""}">${eur(a.montant_ttc)}</div>
-        <div style="margin-top:4px">${badge}</div>
-      </div></button>`;
-  }).join("");
-  $("#vue").innerHTML = `
-    <h2>À vérifier</h2>
-    <p class="sous">${d.anomalies.length} écart${d.anomalies.length>1?"s":""} à expliquer,
-      les plus urgents d'abord : les images de vidéosurveillance ne sont gardées que 14 jours.</p>
-    ${d.masquees ? `<div class="alerte info">${d.masquees} élément(s) vous concernant
-      sont traités par votre hiérarchie.</div>` : ""}
-    <div class="bloc">${lignes || `<div class="vide"><b>Rien à vérifier</b>
-      Déposez les exports de la semaine pour lancer une analyse.</div>`}</div>`;
-  if (E.detailId) { const id = E.detailId; E.detailId = null; ouvrirAnomalie(id); }
-}
-
 function libelleRegle(a) {
   const r = (a.regles_declenchees || [])[0];
   const p = a.pieces || {};
   return {
-    SESSION_ECART_ESPECES: `Manquant en caisse${p.validee_par ? " · validé par " + p.validee_par : ""}`,
-    SESSION_ECART_TARDIF:  "Manquant en caisse sur une clôture de fin de service",
-    ANNUL_DELAI:           `Annulation ${p.delai_heures ? Math.round(p.delai_heures) + " h" : ""} après le ticket`,
-    REMISE_LIBELLE_INCONNU:`Remise non répertoriée : ${p.libelle || ""}`,
-    REMISE_LIBELLE_INTERDIT:`Remise non autorisée : ${p.libelle || ""}`,
-    CO_HORS_RUSH:          "Commandes ouvertes concentrées après 21 h",
-    CO_AUTO_DOMINANT:      "Commandes ouvertes annulées par le système, sans traçabilité"
+    SESSION_ECART_ESPECES: "Manquant en caisse" + (p.validee_par ? " · validé par " + p.validee_par : ""),
+    SESSION_ECART_TARDIF: "Manquant en caisse sur une clôture de fin de service",
+    ANNUL_DELAI: "Annulation " + (p.delai_heures ? Math.round(p.delai_heures) + " h " : "") + "après le ticket",
+    REMISE_LIBELLE_INCONNU: "Remise non répertoriée : " + (p.libelle || ""),
+    REMISE_LIBELLE_INTERDIT: "Remise non autorisée : " + (p.libelle || ""),
+    CO_HORS_RUSH: "Commandes ouvertes concentrées après 21 h",
+    CO_AUTO_DOMINANT: "Commandes ouvertes annulées par le système, sans traçabilité",
+    RATIO_HORS_SEUIL: "Ratio au-dessus de la moyenne réseau",
+    TEND_EN_HAUSSE: "Ratio en progression continue",
+    TEND_STABLE_HAUT: "Ratio durablement élevé"
   }[r] || r || "Écart";
 }
 
+async function vueAnomalies() {
+  const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
+  const lignes = d.anomalies.map(function(a){
+    const reste = resteCamera(a.echeance_camera);
+    const badge = reste === null ? "" :
+      reste < 0 ? '<span class="etiquette expire">images perdues</span>' :
+      reste <= 4 ? '<span class="etiquette urgent">' + reste + ' j pour la caméra</span>' :
+      '<span class="etiquette">' + reste + ' j</span>';
+    return '<button class="ligne" onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
+      '<div class="corps"><div class="titre">' + esc(libelleRegle(a)) + '</div>' +
+      '<div class="detail">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
+      (a.badge_code ? ' · ' + esc(a.badge_code) : '') + '</div></div>' +
+      '<div style="text-align:right"><div class="montant num ' +
+      (a.montant_ttc < 0 ? "negatif" : "") + '">' + eur(a.montant_ttc) + '</div>' +
+      '<div style="margin-top:4px">' + badge + '</div></div></button>';
+  }).join("");
+  $("#vue").innerHTML =
+    '<h2>À vérifier</h2>' +
+    '<p class="sous">' + d.anomalies.length + ' écart(s) à expliquer, les plus urgents d\'abord : ' +
+    'les images de vidéosurveillance ne sont gardées que 14 jours.</p>' +
+    (d.masquees ? '<div class="alerte info">' + d.masquees +
+      ' élément(s) vous concernant sont traités par votre hiérarchie.</div>' : '') +
+    '<div class="bloc">' + (lignes || '<div class="vide"><b>Rien à vérifier</b>' +
+      'Déposez les exports de la période pour lancer une analyse.</div>') + '</div>';
+}
+
 async function ouvrirAnomalie(id) {
-  const { anomalie:a, evenements } = await api("audit", "anomalie", { id });
-  const p = a.pieces || {};
-  const peutClore = E.droits.cloture.includes(a.restaurant_id);
+  const r = await api("audit", "anomalie", { id });
+  const a = r.anomalie, evenements = r.evenements, p = a.pieces || {};
+  const peutClore = E.droits.cloture.indexOf(a.restaurant_id) >= 0;
   const reste = resteCamera(a.echeance_camera);
-  $("#vue").innerHTML = `
-    <button class="retour" onclick="aller('anomalies')">← Retour à la liste</button>
-    <h2>${esc(libelleRegle(a))}</h2>
-    <p class="sous">${esc((E.restaurants.find(r=>r.id===a.restaurant_id)||{}).nom||"")} ·
-      ${jour(a.periode_debut)}${a.badge_code ? " · badge " + esc(a.badge_code) : ""}</p>
-    ${reste !== null && reste <= 4 ? `<div class="alerte erreur">${reste < 0
+  $("#vue").innerHTML =
+    '<button class="retour" onclick="aller(\'anomalies\')">← Retour à la liste</button>' +
+    '<h2>' + esc(libelleRegle(a)) + '</h2>' +
+    '<p class="sous">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
+      (a.badge_code ? ' · badge ' + esc(a.badge_code) : '') + '</p>' +
+    (reste !== null && reste <= 4 ? '<div class="alerte erreur">' + (reste < 0
       ? "Les images de cette période ne sont plus disponibles."
-      : `Il reste ${reste} jour(s) pour consulter les images.`}</div>` : ""}
-    <div class="bloc"><div class="zone"><dl>
-      ${Object.entries(p).map(([k,v]) => `<dt>${esc(k.replace(/_/g," "))}</dt>
-        <dd>${esc(Array.isArray(v) ? v.join(", ") : v)}</dd>`).join("")}
-      <dt>Montant</dt><dd class="num">${eur(a.montant_ttc)}</dd>
-      <dt>Score</dt><dd class="num">${a.score ?? "—"}</dd>
-    </dl></div></div>
-    ${evenements.length ? `<div class="bloc">${evenements.map(e =>
-      `<div class="ligne"><div class="corps"><div class="titre">${esc(e.type)}</div>
-      <div class="detail">${esc(e.contenu||"")} · ${jour(e.cree_le)}</div></div></div>`).join("")}</div>` : ""}
-    <div class="bloc"><div class="zone">
-      <textarea id="note" placeholder="Ce que vous avez constaté : vérification caméra, explication du salarié, erreur de procédure…"></textarea>
-      <div class="actions">
-        <button onclick="majAnomalie(${id},null)">Enregistrer la note</button>
-        ${peutClore ? `
-          <button onclick="majAnomalie(${id},'EXPLIQUEE')">Écart expliqué</button>
-          <button onclick="majAnomalie(${id},'CONFIRMEE')" class="fort">Écart confirmé</button>
-          <button onclick="majAnomalie(${id},'CLASSEE')">Classer sans suite</button>`
-        : `<span class="detail" style="align-self:center;color:var(--ardoise)">
-            Votre note remonte à la direction, qui décide de la suite.</span>`}
-      </div>
-    </div></div>`;
+      : "Il reste " + reste + " jour(s) pour consulter les images.") + '</div>' : '') +
+    '<div class="bloc"><div class="zone"><dl>' +
+      Object.keys(p).map(function(k){
+        const v = p[k];
+        return '<dt>' + esc(k.replace(/_/g," ")) + '</dt><dd>' +
+          esc(Array.isArray(v) ? v.join(", ") : v) + '</dd>'; }).join("") +
+      '<dt>Montant</dt><dd class="num">' + eur(a.montant_ttc) + '</dd>' +
+      '<dt>Score</dt><dd class="num">' + (a.score === null ? "—" : a.score) + '</dd>' +
+    '</dl></div></div>' +
+    (evenements.length ? '<div class="bloc">' + evenements.map(function(e){
+      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(e.type) + '</div>' +
+        '<div class="detail">' + esc(e.contenu || "") + ' · ' + jour(e.cree_le) + '</div></div></div>';
+    }).join("") + '</div>' : '') +
+    '<div class="bloc"><div class="zone">' +
+      '<textarea id="note" placeholder="Ce que vous avez constaté : vérification caméra, ' +
+        'explication du salarié, erreur de procédure…"></textarea><div class="actions">' +
+      '<button onclick="majAnomalie(' + id + ',null)">Enregistrer la note</button>' +
+      (peutClore
+        ? '<button onclick="majAnomalie(' + id + ',\'EXPLIQUEE\')">Écart expliqué</button>' +
+          '<button class="fort" onclick="majAnomalie(' + id + ',\'CONFIRMEE\')">Écart confirmé</button>' +
+          '<button onclick="majAnomalie(' + id + ',\'CLASSEE\')">Classer sans suite</button>'
+        : '<span style="align-self:center;color:var(--ardoise);font-size:13.5px">' +
+          'Votre note remonte à la direction, qui décide de la suite.</span>') +
+    '</div></div></div>';
 }
 
 async function majAnomalie(id, statut) {
   const c = $("#note").value.trim();
   if (!c && !statut) return;
-  await api("audit", "majAnomalie", { id, statut, commentaire:c,
+  await api("audit", "majAnomalie", { id:id, statut:statut, commentaire:c,
     type: statut ? "EXPLICATION" : "COMMENTAIRE" });
   aller("anomalies");
 }
 
 /* ---------- dépôt ---------- */
 
-async function vueDepot() {
-  const restos = E.restaurants.filter(r => E.droits.depot.includes(r.id));
-  if (!restos.length) return $("#vue").innerHTML =
-    `<div class="vide"><b>Aucun restaurant</b>Vous n'avez pas de droit de dépôt.</div>`;
-  $("#vue").innerHTML = `
-    <h2>Déposer les exports</h2>
-    <p class="sous">Dans Cash Système, descendez le menu Audit dans l'ordre et exportez en CSV.
-      Le restaurant et la période sont lus dans les fichiers.</p>
-    <label class="champ"><span>Restaurant</span>
-      <select id="resto">${restos.map(r =>
-        `<option value="${r.id}">${esc(r.nom)}</option>`).join("")}</select></label>
-    <div class="depot" id="zone">
-      <p style="margin:0 0 12px">Glissez les fichiers ici, ou</p>
-      <input type="file" id="fichiers" multiple accept=".csv" style="display:none"
-             onchange="envoyer(this.files)">
-      <button class="principal" style="width:auto;padding:10px 20px"
-        onclick="document.getElementById('fichiers').click()">Choisir des fichiers</button>
-    </div>
-    <div class="journal" id="journal"></div>`;
-  const z = $("#zone");
-  z.ondragover = e => { e.preventDefault(); z.classList.add("actif"); };
-  z.ondragleave = () => z.classList.remove("actif");
-  z.ondrop = e => { e.preventDefault(); z.classList.remove("actif"); envoyer(e.dataTransfer.files); };
+function moisDisponibles(n) {
+  const l = [], d = new Date();
+  for (let i = 0; i < (n || 14); i++) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    l.push([m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2,"0"),
+            MOIS_FR[m.getMonth()] + " " + m.getFullYear()]);
+  }
+  return l;
 }
 
-async function envoyer(fichiers) {
-  const restaurant_id = Number($("#resto").value);
-  const j = $("#journal");
+async function vueDepot(params) {
+  const restos = E.restaurants.filter(r => E.droits.depot.indexOf(r.id) >= 0);
+  if (!restos.length) { $("#vue").innerHTML =
+    '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de dépôt.</div>'; return; }
+  E.depot = {
+    restaurant_id: (params && params.restaurant_id) || (E.depot && E.depot.restaurant_id) || restos[0].id,
+    mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0]
+  };
+  const rid = E.depot.restaurant_id, mois = E.depot.mois;
+  const an = Number(mois.slice(0,4)), m = Number(mois.slice(5,7));
+  const debut = mois + "-01";
+  const fin = mois + "-" + String(new Date(an, m, 0).getDate()).padStart(2,"0");
+
+  const d = await api("audit", "depots", { restaurant_id:rid, debut:debut, fin:fin });
+  const deposes = {};
+  d.imports.forEach(function(i){ if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
+  const attendus = d.types.filter(t => t.obligatoire);
+  const faits = attendus.filter(t => deposes[t.code]).length;
+
+  $("#vue").innerHTML =
+    '<h2>Déposer les exports</h2>' +
+    '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
+      'en CSV chaque rapport de la liste. Elle suit l\'ordre du menu Audit.</p>' +
+    '<div class="duo">' +
+      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'depot\',' +
+        '{restaurant_id:Number(this.value),mois:\'' + mois + '\'})">' +
+        restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
+          '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
+      '<label class="champ"><span>Période</span><select onchange="aller(\'depot\',' +
+        '{restaurant_id:' + rid + ',mois:this.value})">' +
+        moisDisponibles().map(o => '<option value="' + o[0] + '"' +
+          (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
+        '</select></label>' +
+    '</div>' +
+    '<div class="progression"><div class="jauge"><span style="width:' +
+      (attendus.length ? faits / attendus.length * 100 : 0) + '%"></span></div>' +
+      '<b>' + faits + ' sur ' + attendus.length + '</b> rapports déposés pour cette période</div>' +
+    '<div class="bloc">' + d.types.filter(t => t.obligatoire || deposes[t.code])
+      .map(t => ligneDepot(t, deposes[t.code])).join("") + '</div>' +
+    '<p class="sous" style="margin-top:14px">Les rapports « chaque semaine » alimentent la ' +
+      'vérification caméra : passé 14 jours, les images ne sont plus disponibles.</p>';
+}
+
+function ligneDepot(t, imp) {
+  const id = "d" + t.code;
+  const multi = t.code === "SYNTHESE_CA";
+  return '<div class="ligne" id="l' + id + '"><div class="corps"><div class="titre">' +
+    esc(t.libelle_menu) +
+    (multi ? ' <span class="etiquette">9 fichiers</span>' : '') +
+    (t.frequence === "HEBDO" ? ' <span class="etiquette">chaque semaine</span>' : '') +
+    '</div><div class="detail">' +
+    (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes'
+         : esc(t.usage_audit || "à déposer")) + '</div></div>' +
+    '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv" ' +
+      'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
+    '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
+      id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
+}
+
+async function envoyer(fichiers, codeAttendu, idLigne) {
+  const rid = E.depot.restaurant_id;
+  const detail = document.getElementById("l" + idLigne).querySelector(".detail");
+  let ok = 0; const messages = [];
   for (const f of fichiers) {
-    const id = "f" + Math.random().toString(36).slice(2);
-    j.insertAdjacentHTML("beforeend",
-      `<div id="${id}"><span class="etat">·</span><span>${esc(f.name)} — lecture…</span></div>`);
+    detail.textContent = "lecture de " + f.name + "…";
     try {
       const contenu = await f.text();
-      const d = await api("import", "deposer",
-        { contenu, nom_fichier:f.name, restaurant_id });
-      const sup = [];
-      if (d.anomalies?.creees) sup.push(`${d.anomalies.creees} écart(s) détecté(s)`);
-      if (d.libelles_a_qualifier?.length) sup.push(`${d.libelles_a_qualifier.length} remise(s) à qualifier`);
-      document.getElementById(id).innerHTML =
-        `<span class="etat" style="color:var(--vert)">✓</span>
-         <span>${esc(f.name)} — ${d.type}, ${d.nb} lignes${sup.length ? " · " + sup.join(" · ") : ""}</span>`;
-    } catch (e) {
-      document.getElementById(id).innerHTML =
-        `<span class="etat" style="color:var(--rouge)">✕</span>
-         <span>${esc(f.name)} — ${esc(e.message)}</span>`;
-    }
+      const d = await api("import", "deposer", { contenu:contenu, nom_fichier:f.name,
+        restaurant_id:rid, periode_debut: E.depot.mois + "-01" });
+      const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
+      const recu = d.synthese ? "SYNTHESE" : d.type;
+      const bonneCase = recu === attendu ||
+        (codeAttendu === "REMISES_50" && recu === "REMISES") ||
+        (codeAttendu === "REMISES" && recu === "REMISES");
+      if (!bonneCase) messages.push(f.name + " est un rapport " + recu + ", rangé au bon endroit");
+      else ok++;
+      if (d.anomalies && d.anomalies.creees) messages.push(d.anomalies.creees + " écart(s) détecté(s)");
+      if (d.libelles_a_qualifier && d.libelles_a_qualifier.length)
+        messages.push(d.libelles_a_qualifier.length + " remise(s) à qualifier");
+    } catch (e) { messages.push(f.name + " refusé : " + e.message); }
   }
+  detail.textContent = ok + " fichier(s) accepté(s). " + messages.join(" · ");
+  setTimeout(function(){ aller("depot", E.depot); }, 2800);
 }
 
-/* ---------- libellés de remise ---------- */
+/* ---------- remises ---------- */
 
 async function vueLibelles() {
-  const { libelles } = await api("audit", "libellesAQualifier");
-  $("#vue").innerHTML = `
-    <h2>Remises à qualifier</h2>
-    <p class="sous">Chaque libellé rencontré pour la première fois s'affiche ici.
-      Tant qu'il n'est pas qualifié, ses remises remontent comme écarts.</p>
-    <div class="bloc">${libelles.length ? libelles.map(l => `
-      <div class="ligne"><div class="corps">
-        <div class="titre">${esc(l.libelle)}</div>
-        <div class="detail">Vu du ${jour(l.premiere_vue)} au ${jour(l.derniere_vue)}</div>
-        <div class="actions">
-          <button onclick="qualifier(${l.id},'AUTORISE',0)">Remise normale</button>
-          <button onclick="qualifier(${l.id},'OPERATION',1)">Opération commerciale</button>
-          <button onclick="qualifier(${l.id},'NON_AUTORISE',0)">Non autorisée</button>
-        </div>
-      </div></div>`).join("")
-      : `<div class="vide"><b>Tout est qualifié</b>Aucune nouvelle remise depuis le dernier dépôt.</div>`}
-    </div>`;
+  const d = await api("audit", "libellesAQualifier");
+  $("#vue").innerHTML =
+    '<h2>Remises à qualifier</h2>' +
+    '<p class="sous">Chaque libellé rencontré pour la première fois s\'affiche ici. ' +
+      'Tant qu\'il n\'est pas qualifié, ses remises remontent comme écarts.</p>' +
+    '<div class="bloc">' + (d.libelles.length ? d.libelles.map(function(l){
+      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(l.libelle) + '</div>' +
+        '<div class="detail">Vu du ' + jour(l.premiere_vue) + ' au ' + jour(l.derniere_vue) + '</div>' +
+        '<div class="actions">' +
+        '<button onclick="qualifier(' + l.id + ',\'AUTORISE\',0)">Remise normale</button>' +
+        '<button onclick="qualifier(' + l.id + ',\'OPERATION\',1)">Opération commerciale</button>' +
+        '<button onclick="qualifier(' + l.id + ',\'NON_AUTORISE\',0)">Non autorisée</button>' +
+        '</div></div></div>';
+    }).join("") : '<div class="vide"><b>Tout est qualifié</b>' +
+      'Aucune nouvelle remise depuis le dernier dépôt.</div>') + '</div>';
 }
 
 async function qualifier(id, statut, neutralise) {
-  await api("audit", "qualifierLibelle", { id, statut, neutralise });
+  await api("audit", "qualifierLibelle", { id:id, statut:statut, neutralise:neutralise });
   aller("libelles");
 }
 
 /* ---------- équipe ---------- */
 
 async function vueEquipe(params) {
-  const restos = E.restaurants.filter(r => E.droits.lecture.includes(r.id));
-  const id = params?.restaurant_id || restos[0]?.id;
-  if (!id) return $("#vue").innerHTML = `<div class="vide"><b>Aucun restaurant</b></div>`;
-  const { salaries } = await api("audit", "salaries", { restaurant_id:id });
-  $("#vue").innerHTML = `
-    <h2>Équipe</h2>
-    <p class="sous">Le poste habituel sert à interpréter le taux d'espèces :
-      un poste au drive encaisse naturellement moins d'espèces qu'une borne.</p>
-    <label class="champ"><span>Restaurant</span>
-      <select onchange="aller('equipe',{restaurant_id:Number(this.value)})">
-      ${restos.map(r => `<option value="${r.id}" ${r.id===id?"selected":""}>${esc(r.nom)}</option>`).join("")}
-      </select></label>
-    <div class="bloc">${salaries.length ? salaries.map(s => `
-      <div class="ligne"><div class="corps">
-        <div class="titre">${esc(s.badge_code)}${s.nom_complet ? " · " + esc(s.nom_complet) : ""}</div>
-        <div class="detail">${esc(s.fonction||"fonction à préciser")} ·
-          ${esc(s.poste_habituel||"poste à préciser")}</div>
-      </div>${s.confiance_mapping === "VALIDE"
-        ? `<span class="etiquette ok">validé</span>`
-        : `<span class="etiquette urgent">à valider</span>`}</div>`).join("")
-      : `<div class="vide"><b>Aucun salarié</b>Les badges apparaîtront après le premier dépôt.</div>`}
-    </div>`;
+  const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
+  const id = (params && params.restaurant_id) || (restos[0] && restos[0].id);
+  if (!id) { $("#vue").innerHTML = '<div class="vide"><b>Aucun restaurant</b></div>'; return; }
+  const d = await api("audit", "salaries", { restaurant_id:id });
+  $("#vue").innerHTML =
+    '<h2>Équipe</h2>' +
+    '<p class="sous">Le poste habituel sert à interpréter le taux d\'espèces : un poste au drive ' +
+      'encaisse naturellement moins d\'espèces qu\'une borne.</p>' +
+    '<label class="champ"><span>Restaurant</span>' +
+      '<select onchange="aller(\'equipe\',{restaurant_id:Number(this.value)})">' +
+      restos.map(r => '<option value="' + r.id + '"' + (r.id === id ? " selected" : "") + '>' +
+        esc(r.nom) + '</option>').join("") + '</select></label>' +
+    '<div class="bloc">' + (d.salaries.length ? d.salaries.map(function(s){
+      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(s.badge_code) +
+        (s.nom_complet ? " · " + esc(s.nom_complet) : "") + '</div><div class="detail">' +
+        esc(s.fonction || "fonction à préciser") + ' · ' +
+        esc(s.poste_habituel || "poste à préciser") + '</div></div>' +
+        (s.confiance_mapping === "VALIDE" ? '<span class="etiquette ok">validé</span>'
+                                          : '<span class="etiquette urgent">à valider</span>') +
+        '</div>';
+    }).join("") : '<div class="vide"><b>Aucun salarié</b>' +
+      'Les badges apparaîtront après le premier dépôt.</div>') + '</div>';
 }
 
 /* ---------- accès ---------- */
 
 async function vueAdmin() {
-  const { utilisateurs, perimetres } = await api("audit", "utilisateurs");
-  $("#vue").innerHTML = `
-    <h2>Accès</h2>
-    <p class="sous">Un directeur dépose et consulte son restaurant. Seuls la direction
-      et les superviseurs peuvent clore un écart.</p>
-    <div class="bloc">${utilisateurs.map(u => {
-      const n = perimetres.filter(p => p.utilisateur_id === u.id).length;
-      return `<div class="ligne"><div class="corps">
-        <div class="titre">${esc(u.nom)}</div>
-        <div class="detail">${esc(u.role)} · ${n} restaurant(s) ·
-          ${u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté"}</div>
-      </div>${u.actif ? "" : `<span class="etiquette">inactif</span>`}</div>`;
-    }).join("")}</div>
-    <div class="bloc"><div class="zone">
-      <h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>
-      <label class="champ"><span>Nom</span><input id="n-nom"></label>
-      <label class="champ"><span>E-mail</span><input id="n-email" type="email"></label>
-      <label class="champ"><span>Rôle</span><select id="n-role">
-        <option value="DIRECTEUR">Directeur</option>
-        <option value="SUPERVISEUR">Superviseur</option>
-        <option value="CDG">Contrôle de gestion</option>
-        <option value="DG">Direction générale</option></select></label>
-      <label class="champ"><span>Code (6 chiffres minimum si la personne peut clore)</span>
-        <input id="n-pin" inputmode="numeric"></label>
-      <label class="champ"><span>Restaurants</span>
-        <select id="n-restos" multiple size="7" style="width:100%">
-        ${E.restaurants.map(r => `<option value="${r.id}">${esc(r.nom)}</option>`).join("")}
-        </select></label>
-      <div id="err-admin"></div>
-      <button class="principal" onclick="creerUtilisateur()">Créer l'accès</button>
-    </div></div>`;
+  const d = await api("audit", "utilisateurs");
+  $("#vue").innerHTML =
+    '<h2>Accès</h2>' +
+    '<p class="sous">Un directeur dépose et consulte son restaurant. Seuls la direction et les ' +
+      'superviseurs peuvent clore un écart.</p>' +
+    '<div class="bloc">' + d.utilisateurs.map(function(u){
+      const n = d.perimetres.filter(p => p.utilisateur_id === u.id).length;
+      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
+        '<div class="detail">' + esc(u.role) + ' · ' + n + ' restaurant(s) · ' +
+        (u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté") +
+        '</div></div>' + (u.actif ? "" : '<span class="etiquette">inactif</span>') + '</div>';
+    }).join("") + '</div>' +
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>' +
+      '<label class="champ"><span>Nom</span><input id="n-nom"></label>' +
+      '<label class="champ"><span>E-mail</span><input id="n-email" type="email"></label>' +
+      '<label class="champ"><span>Rôle</span><select id="n-role">' +
+        '<option value="DIRECTEUR">Directeur</option>' +
+        '<option value="SUPERVISEUR">Superviseur</option>' +
+        '<option value="CDG">Contrôle de gestion</option>' +
+        '<option value="DG">Direction générale</option></select></label>' +
+      '<label class="champ"><span>Code (6 chiffres minimum si la personne peut clore)</span>' +
+        '<input id="n-pin" inputmode="numeric"></label>' +
+      '<label class="champ"><span>Restaurants</span>' +
+        '<select id="n-restos" multiple size="7">' +
+        E.restaurants.map(r => '<option value="' + r.id + '">' + esc(r.nom) + '</option>').join("") +
+        '</select></label><div id="err-admin"></div>' +
+      '<button class="principal" onclick="creerUtilisateur()">Créer l\'accès</button>' +
+    '</div></div>';
 }
 
 async function creerUtilisateur() {
   const role = $("#n-role").value;
   const clot = role !== "DIRECTEUR";
-  const perimetres = [...$("#n-restos").selectedOptions].map(o => ({
-    restaurant_id:Number(o.value), peut_deposer:true, peut_lire:true, peut_cloturer:clot }));
+  const perimetres = Array.prototype.map.call($("#n-restos").selectedOptions, function(o){
+    return { restaurant_id:Number(o.value), peut_deposer:true, peut_lire:true, peut_cloturer:clot }; });
   try {
-    await api("audit", "creerUtilisateur", {
-      nom:$("#n-nom").value.trim(), email:$("#n-email").value.trim(),
-      role, pin:$("#n-pin").value.trim(), perimetres });
+    await api("audit", "creerUtilisateur", { nom:$("#n-nom").value.trim(),
+      email:$("#n-email").value.trim(), role:role, pin:$("#n-pin").value.trim(),
+      perimetres:perimetres });
     aller("admin");
-  } catch (e) { $("#err-admin").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`; }
+  } catch (e) { $("#err-admin").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>'; }
 }
 
 /* ---------- amorçage ---------- */
 
-const ancienAller = aller;
-aller = (onglet, params) => {
-  if (onglet === "anomalies" && params?.id) { ouvrirAnomalie(params.id).catch(afficherErreur); return; }
-  ancienAller(onglet, params);
-};
-
 E.jeton = localStorage.getItem("jeton-audit");
-if (E.jeton) demarrer().catch(() => seDeconnecter());
+if (E.jeton) demarrer().catch(seDeconnecter);
 </script>
 </body>
 </html>
