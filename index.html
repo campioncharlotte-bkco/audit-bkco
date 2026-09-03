@@ -171,6 +171,7 @@ textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
   <main id="vue"></main>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const E = {};
 const $ = s => document.querySelector(s);
@@ -482,15 +483,46 @@ function ligneDepot(t, imp) {
   const multi = t.code === "SYNTHESE_CA";
   return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') + '>' +
     '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
-    (multi ? ' <span class="etiquette">9 fichiers</span>' : '') +
+    (multi ? ' <span class="etiquette">archive ZIP ou 9 CSV</span>' : '') +
     (t.frequence === "HEBDO" ? ' <span class="etiquette">chaque semaine</span>' : '') +
     '</div><div class="detail">' +
     (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes'
          : esc(t.usage_audit || "à déposer")) + '</div></div>' +
-    '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv" ' +
+    '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv,.zip" ' +
       'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
     '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
       id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
+}
+
+/* La Synthèse CA par canal se télécharge en archive ZIP contenant ses neuf
+   CSV : on l'ouvre dans le navigateur plutôt que de demander à chacun de la
+   décompresser à la main. Les autres rapports passent tels quels. */
+async function deplier(fichiers) {
+  const sortie = [];
+  for (const f of fichiers) {
+    const estZip = /\.zip$/i.test(f.name);
+    if (!estZip) { sortie.push({ name: f.name, contenu: await lireTexte(await f.arrayBuffer()) }); continue; }
+    if (typeof JSZip === "undefined")
+      throw new Error("La lecture des archives ZIP n'a pas pu se charger. Réessayez, ou "
+        + "décompressez l'archive et déposez les CSV.");
+    const zip = await JSZip.loadAsync(f);
+    const noms = Object.keys(zip.files)
+      .filter(n => /\.csv$/i.test(n) && !zip.files[n].dir && !n.startsWith("__MACOSX"));
+    if (!noms.length) throw new Error(f.name + " ne contient aucun fichier CSV.");
+    for (const n of noms.sort())
+      sortie.push({ name: n.split("/").pop(),
+                    contenu: await lireTexte(await zip.files[n].async("arraybuffer")) });
+  }
+  return sortie;
+}
+
+/* Cash Système exporte tantôt en UTF-8, tantôt en Windows-1252. Un « é »
+   mal décodé devient un caractère de remplacement : on le détecte et on
+   relit dans l'autre encodage plutôt que d'insérer des libellés illisibles. */
+async function lireTexte(buffer) {
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  if (utf8.indexOf("\uFFFD") < 0) return utf8;
+  try { return new TextDecoder("windows-1252").decode(buffer); } catch { return utf8; }
 }
 
 /* Le dépôt se fait ligne par ligne, sans recharger l'écran : on peut
@@ -508,10 +540,20 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
 
   let ok = 0, lignesLues = 0, aQualifier = 0;
   const soucis = [];
-  for (const f of fichiers) {
+
+  let aTraiter;
+  try {
+    detail.textContent = "lecture des fichiers…";
+    aTraiter = await deplier(fichiers);
+  } catch (e) {
+    detail.innerHTML = '<span style="color:var(--rouge)">' + esc(e.message) + '</span>';
+    bouton.disabled = false; bouton.textContent = initial; return;
+  }
+
+  for (const f of aTraiter) {
     detail.textContent = "envoi de " + f.name + "…";
     try {
-      const contenu = await f.text();
+      const contenu = f.contenu;
       const d = await api("import", "deposer", { contenu:contenu, nom_fichier:f.name,
         restaurant_id:rid, periode_debut:bornes[0], periode_fin:bornes[1] });
       const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
