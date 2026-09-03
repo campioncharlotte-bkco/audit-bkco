@@ -28,7 +28,24 @@ const TOLERANCE_VENTILATION = 5;  // euros : en deçà, l'écart espèces est re
 // colonnes apportées par l'autre rapport de la paire.
 const TABLES_UPSERT = ["flux_caissiers", "tickets_non_payants", "flux_responsables"];
 
-async function sb(chemin, options = {}) {
+// Supabase répond parfois par une page d'erreur HTML de sa passerelle plutôt
+// que par du JSON : inutile de la déverser à l'écran, elle n'apprend rien.
+function messageErreur(statut, corps) {
+  const t = String(corps || "").trim();
+  if (t.startsWith("<") || t.toUpperCase().startsWith("<!DOCTYPE"))
+    return `Supabase n'a pas répondu (erreur ${statut}). La requête est probablement `
+      + `trop longue : réessayez, et vérifiez les index sur import_id.`;
+  try {
+    const j = JSON.parse(t);
+    return `Supabase ${statut} : ${j.message || j.hint || t.slice(0, 200)}`;
+  } catch { return `Supabase ${statut} : ${t.slice(0, 200)}`; }
+}
+
+const pause = ms => new Promise(r => setTimeout(r, ms));
+
+// Un 5xx est presque toujours passager (temps limite dépassé côté passerelle).
+// On retente une fois avant d'abandonner le dépôt.
+async function sb(chemin, options = {}, tentative = 0) {
   const r = await fetch(`${URL_SB}/rest/v1/${chemin}`, {
     ...options,
     headers: { apikey: KEY_SB, Authorization: `Bearer ${KEY_SB}`,
@@ -36,7 +53,10 @@ async function sb(chemin, options = {}) {
       Prefer: options.prefer || "return=representation", ...(options.headers || {}) }
   });
   const t = await r.text();
-  if (!r.ok) throw new Error(`Supabase ${r.status} : ${t.slice(0, 300)}`);
+  if (!r.ok) {
+    if (r.status >= 500 && tentative < 1) { await pause(1200); return sb(chemin, options, 1); }
+    throw new Error(messageErreur(r.status, t));
+  }
   return t ? JSON.parse(t) : null;
 }
 const rpc = (fn, args) => sb(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
@@ -64,7 +84,7 @@ function homogeneiser(lignes) {
   });
 }
 
-const parLots = async (table, lignes, taille = 500) => {
+const parLots = async (table, lignes, taille = 200) => {
   const plates = homogeneiser(lignes);
   for (let i = 0; i < plates.length; i += taille)
     await sb(table, { method: "POST", prefer: "return=minimal",
@@ -95,8 +115,12 @@ const jours = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n);
 
 // Un dépôt qui échoue en cours de route ne doit pas rester en travers du
 // chemin : on le marque rejeté, son empreinte cesse de bloquer la reprise.
-async function marquerRejete(id, motif) {
+async function marquerRejete(id, motif, table) {
   try {
+    // les lignes déjà écrites doivent partir avec lui, sinon le mois
+    // contient un demi-dépôt que personne ne verra
+    if (table && !TABLES_UPSERT.includes(table))
+      await sb(`${table}?import_id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
     await sb(`imports?id=eq.${id}`, { method: "PATCH", prefer: "return=minimal",
       body: JSON.stringify({ statut: "REJETE",
                              recoupement_detail: String(motif).slice(0, 300) }) });
@@ -225,7 +249,7 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
     return { ok: true, import_id: imp.id, type: p.type, nb: p.nb, remplaces,
              periode: [debut, fin], libelles_a_qualifier: nouveaux, anomalies };
   } catch (e) {
-    await marquerRejete(imp.id, e.message || e);
+    await marquerRejete(imp.id, e.message || e, p.table);
     return { erreur: "Dépôt interrompu, rien n'a été conservé : " + String(e.message || e) };
   }
 }
