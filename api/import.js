@@ -1,579 +1,323 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#243b53">
-<title>Audit BKCO</title>
-<style>
-:root{
-  --papier:#f6f7f8; --surface:#fff; --encre:#1a2028; --ardoise:#5a6672;
-  --filet:#dfe3e7; --profond:#243b53; --ambre:#b8730e; --rouge:#a32f2a;
-  --vert:#2e6b4f; --sable:#f0ece4;
-}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{background:var(--papier);color:var(--encre);
-  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  -webkit-font-smoothing:antialiased}
-.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-button,input,select,textarea{font:inherit;color:inherit}
-button{cursor:pointer;border:0;background:none}
-select,input,textarea{background:var(--surface)}
+/* =====================================================================
+   AUDIT BKCO — api/import.js
+   Traite un dépôt : parse, contrôle l'intégrité, insère, puis génère les
+   anomalies datées de la période. Les anomalies hebdomadaires portent une
+   échéance caméra (14 jours de rétention chez BKCO) : la file est triée
+   par ce qui va expirer, pas par gravité supposée.
+   ===================================================================== */
 
-#connexion{min-height:100dvh;display:grid;place-items:center;padding:24px}
-.carte-connexion{width:100%;max-width:340px}
-.carte-connexion h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
-.carte-connexion p{color:var(--ardoise);margin:0 0 28px;font-size:14px}
-.champ{display:block;margin-bottom:14px}
-.champ span{display:block;font-size:13px;color:var(--ardoise);margin-bottom:5px}
-.champ input,.champ select{width:100%;padding:11px 12px;border:1px solid var(--filet);border-radius:7px}
-.champ input:focus,.champ select:focus{outline:2px solid var(--profond);outline-offset:1px}
-.principal{width:100%;padding:12px;border-radius:7px;background:var(--profond);color:#fff;font-weight:600}
-.principal:disabled{opacity:.5}
+const crypto = require("crypto");
+const { parser, recouperSynthese } = require("../parsers.js");
 
-#app{display:none;min-height:100dvh;padding-bottom:78px}
-header{position:sticky;top:0;z-index:10;background:var(--surface);
-  border-bottom:1px solid var(--filet);padding:12px 16px;display:flex;align-items:center;gap:12px}
-header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
-header .qui{margin-left:auto;font-size:13px;color:var(--ardoise)}
-main{max-width:940px;margin:0 auto;padding:18px 16px}
-h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
-.sous{color:var(--ardoise);font-size:14px;margin:0 0 20px}
+const URL_SB = process.env.SUPABASE_URL;
+const KEY_SB = process.env.SUPABASE_SERVICE_KEY;
 
-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);
-  border-top:1px solid var(--filet);display:flex;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--ardoise);
-  display:flex;flex-direction:column;align-items:center;gap:3px}
-nav button b{font-size:16px;font-weight:400;line-height:1}
-nav button[aria-current="page"]{color:var(--profond);font-weight:600;box-shadow:inset 0 2px 0 var(--profond)}
-@media(min-width:800px){
-  #app{padding-bottom:0}
-  nav{position:sticky;top:53px;bottom:auto;border-top:0;border-bottom:1px solid var(--filet);
-    max-width:940px;margin:0 auto}
-  nav button{flex:0 0 auto;padding:12px 16px;font-size:14px;flex-direction:row;gap:7px}
-}
+const RETENTION_CAMERA = 14;      // jours
+const SEUIL_ECART_SESSION = 20;   // euros, écart de caisse jugé significatif
+const DELAI_ANNULATION_H = 2;     // procédure BK : annuler aussitôt, 2h max en rush
 
-.bloc{background:var(--surface);border:1px solid var(--filet);border-radius:9px;
-  overflow:hidden;margin-bottom:16px}
-.ligne{display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid var(--filet);
-  align-items:baseline;width:100%;text-align:left}
-.ligne:last-child{border-bottom:0}
-button.ligne:hover{background:var(--papier)}
-.ligne .corps{flex:1;min-width:0}
-.ligne .titre{font-weight:600;font-size:14.5px}
-.ligne .detail{color:var(--ardoise);font-size:13px;margin-top:3px;word-break:break-word}
-.montant{font-weight:650;white-space:nowrap}
-.montant.negatif{color:var(--rouge)}
-
-.etiquette{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:4px;
-  background:var(--sable);color:var(--ardoise);font-weight:600}
-.etiquette.urgent{background:#f7ede0;color:var(--ambre)}
-.etiquette.expire{background:#f6e6e5;color:var(--rouge)}
-.etiquette.ok{background:#e6efea;color:var(--vert)}
-.ligne .titre .etiquette{margin-left:6px;vertical-align:1px}
-
-.vide{padding:40px 20px;text-align:center;color:var(--ardoise)}
-.vide b{display:block;color:var(--encre);margin-bottom:6px;font-size:15px}
-
-.duo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
-.duo .champ{flex:1;min-width:170px;margin:0}
-.progression{margin-bottom:16px;font-size:14px;color:var(--ardoise)}
-.progression b{color:var(--encre)}
-.jauge{height:5px;background:var(--filet);border-radius:3px;overflow:hidden;margin-bottom:8px}
-.jauge span{display:block;height:100%;background:var(--profond);transition:width .3s}
-.bouton-depot{flex:0 0 auto;align-self:center;padding:8px 14px;border:1px solid var(--filet);
-  border-radius:7px;background:var(--surface);font-size:13.5px;font-weight:600}
-.bouton-depot:hover{border-color:var(--profond);color:var(--profond)}
-.bouton-depot.fait{border:0;background:transparent;color:var(--ardoise);font-weight:500}
-
-.retour{color:var(--ardoise);font-size:14px;margin-bottom:12px;padding:4px 0}
-dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:14px}
-dt{color:var(--ardoise)}
-dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
-.zone{padding:14px}
-textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
-  border-radius:7px;resize:vertical}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
-.actions button{padding:9px 14px;border-radius:7px;border:1px solid var(--filet);
-  background:var(--surface);font-size:14px;font-weight:500}
-.actions button.fort{background:var(--profond);color:#fff;border-color:var(--profond)}
-
-.alerte{padding:11px 13px;border-radius:7px;font-size:14px;margin-bottom:14px}
-.alerte.erreur{background:#f6e6e5;color:var(--rouge)}
-.alerte.info{background:#eef2f6;color:var(--profond)}
-.chargement{color:var(--ardoise);padding:30px;text-align:center}
-</style>
-</head>
-<body>
-
-<section id="connexion">
-  <form class="carte-connexion" onsubmit="seConnecter(event)">
-    <h1>Audit BKCO</h1>
-    <p>Suivi des écarts de caisse et des ratios financiers.</p>
-    <div id="err-connexion"></div>
-    <label class="champ"><span>Adresse e-mail</span>
-      <input id="email" type="email" autocomplete="username" required></label>
-    <label class="champ"><span>Code</span>
-      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required></label>
-    <button class="principal" id="btn-connexion">Se connecter</button>
-  </form>
-</section>
-
-<div id="app">
-  <header>
-    <h1>Audit BKCO</h1>
-    <span class="qui" id="qui"></span>
-    <button onclick="seDeconnecter()" style="color:var(--ardoise);font-size:13px">Quitter</button>
-  </header>
-  <nav id="nav"></nav>
-  <main id="vue"></main>
-</div>
-
-<script>
-const E = {};
-const $ = s => document.querySelector(s);
-const eur = n => (n === null || n === undefined ? "—" :
-  Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
-const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}) : "—";
-const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
-const MOIS_FR = ["janvier","février","mars","avril","mai","juin",
-                 "juillet","août","septembre","octobre","novembre","décembre"];
-
-async function api(fichier, action, params = {}) {
-  const r = await fetch("/api/" + fichier, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ action, jeton: E.jeton, ...params })
+async function sb(chemin, options = {}) {
+  const r = await fetch(`${URL_SB}/rest/v1/${chemin}`, {
+    ...options,
+    headers: { apikey: KEY_SB, Authorization: `Bearer ${KEY_SB}`,
+      "Content-Type": "application/json",
+      Prefer: options.prefer || "return=representation", ...(options.headers || {}) }
   });
-  const d = await r.json();
-  if (r.status === 401) { seDeconnecter(); throw new Error("Session expirée"); }
-  if (d.erreur) throw new Error(d.erreur);
-  return d;
+  const t = await r.text();
+  if (!r.ok) throw new Error(`Supabase ${r.status} : ${t.slice(0, 300)}`);
+  return t ? JSON.parse(t) : null;
+}
+const rpc = (fn, args) => sb(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
+
+const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
+const sign = d => crypto.createHmac("sha256", KEY_SB).update(d).digest("base64url");
+function lireJeton(j) {
+  if (!j || !j.includes(".")) return null;
+  const [p, s] = j.split(".");
+  if (sign(p) !== s) return null;
+  try { const d = JSON.parse(Buffer.from(p, "base64url").toString());
+        return d.exp > Date.now() ? d : null; } catch { return null; }
 }
 
-/* ---------- connexion ---------- */
-
-async function seConnecter(ev) {
-  ev.preventDefault();
-  const b = $("#btn-connexion"); b.disabled = true; b.textContent = "Connexion…";
-  try {
-    const r = await fetch("/api/audit", { method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ action:"connexion", email:$("#email").value.trim(), pin:$("#pin").value }) });
-    const d = await r.json();
-    if (d.erreur) throw new Error(d.erreur);
-    localStorage.setItem("jeton-audit", d.jeton);
-    E.jeton = d.jeton;
-    await demarrer();
-  } catch (e) {
-    $("#err-connexion").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
-  } finally { b.disabled = false; b.textContent = "Se connecter"; }
+// PostgREST refuse un lot dont les objets n'ont pas exactement les mêmes
+// clés, et JSON.stringify supprime les clés valant undefined. On aligne
+// donc toutes les lignes sur l'union des colonnes rencontrées.
+function homogeneiser(lignes) {
+  const colonnes = new Set();
+  lignes.forEach(l => Object.keys(l).forEach(k => { if (l[k] !== undefined) colonnes.add(k); }));
+  return lignes.map(l => {
+    const o = {};
+    colonnes.forEach(k => o[k] = (l[k] === undefined ? null : l[k]));
+    return o;
+  });
 }
 
-function seDeconnecter() { localStorage.removeItem("jeton-audit"); location.reload(); }
-
-async function demarrer() {
-  const d = await api("audit", "moi");
-  Object.assign(E, d);
-  $("#connexion").style.display = "none";
-  $("#app").style.display = "block";
-  $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [["anomalies","À vérifier","!"],["depot","Dépôt","+"],
-                   ["libelles","Remises","%"],["equipe","Équipe","•"]];
-  if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
-  $("#nav").innerHTML = onglets.map(function(o){
-    return '<button data-onglet="'+o[0]+'" onclick="aller(\''+o[0]+'\')"><b>'+o[2]+'</b>'+o[1]+'</button>';
-  }).join("");
-  aller(E.droits.lecture.length ? "anomalies" : "depot");
-}
-
-function aller(onglet, params) {
-  if (onglet === "anomalies" && params && params.id) {
-    ouvrirAnomalie(params.id).catch(afficherErreur); return;
-  }
-  E.onglet = onglet;
-  document.querySelectorAll("#nav button").forEach(function(b){
-    b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
-  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
-  ({ anomalies:vueAnomalies, depot:vueDepot, libelles:vueLibelles,
-     equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
-}
-const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
-const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
-
-/* ---------- à vérifier ---------- */
-
-function resteCamera(echeance) {
-  if (!echeance) return null;
-  return Math.ceil((new Date(echeance) - new Date()) / 86400000);
-}
-
-function libelleRegle(a) {
-  const r = (a.regles_declenchees || [])[0];
-  const p = a.pieces || {};
-  return {
-    SESSION_ECART_ESPECES: "Manquant en caisse" + (p.validee_par ? " · validé par " + p.validee_par : ""),
-    SESSION_ECART_TARDIF: "Manquant en caisse sur une clôture de fin de service",
-    ANNUL_DELAI: "Annulation " + (p.delai_heures ? Math.round(p.delai_heures) + " h " : "") + "après le ticket",
-    REMISE_LIBELLE_INCONNU: "Remise non répertoriée : " + (p.libelle || ""),
-    REMISE_LIBELLE_INTERDIT: "Remise non autorisée : " + (p.libelle || ""),
-    CO_HORS_RUSH: "Commandes ouvertes concentrées après 21 h",
-    CO_AUTO_DOMINANT: "Commandes ouvertes annulées par le système, sans traçabilité",
-    RATIO_HORS_SEUIL: "Ratio au-dessus de la moyenne réseau",
-    TEND_EN_HAUSSE: "Ratio en progression continue",
-    TEND_STABLE_HAUT: "Ratio durablement élevé"
-  }[r] || r || "Écart";
-}
-
-async function vueAnomalies() {
-  const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
-  const lignes = d.anomalies.map(function(a){
-    const reste = resteCamera(a.echeance_camera);
-    const badge = reste === null ? "" :
-      reste < 0 ? '<span class="etiquette expire">images perdues</span>' :
-      reste <= 4 ? '<span class="etiquette urgent">' + reste + ' j pour la caméra</span>' :
-      '<span class="etiquette">' + reste + ' j</span>';
-    return '<button class="ligne" onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
-      '<div class="corps"><div class="titre">' + esc(libelleRegle(a)) + '</div>' +
-      '<div class="detail">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
-      (a.badge_code ? ' · ' + esc(a.badge_code) : '') + '</div></div>' +
-      '<div style="text-align:right"><div class="montant num ' +
-      (a.montant_ttc < 0 ? "negatif" : "") + '">' + eur(a.montant_ttc) + '</div>' +
-      '<div style="margin-top:4px">' + badge + '</div></div></button>';
-  }).join("");
-  $("#vue").innerHTML =
-    '<h2>À vérifier</h2>' +
-    '<p class="sous">' + d.anomalies.length + ' écart(s) à expliquer, les plus urgents d\'abord : ' +
-    'les images de vidéosurveillance ne sont gardées que 14 jours.</p>' +
-    (d.masquees ? '<div class="alerte info">' + d.masquees +
-      ' élément(s) vous concernant sont traités par votre hiérarchie.</div>' : '') +
-    '<div class="bloc">' + (lignes || '<div class="vide"><b>Rien à vérifier</b>' +
-      'Déposez les exports de la période pour lancer une analyse.</div>') + '</div>';
-}
-
-async function ouvrirAnomalie(id) {
-  const r = await api("audit", "anomalie", { id });
-  const a = r.anomalie, evenements = r.evenements, p = a.pieces || {};
-  const peutClore = E.droits.cloture.indexOf(a.restaurant_id) >= 0;
-  const reste = resteCamera(a.echeance_camera);
-  $("#vue").innerHTML =
-    '<button class="retour" onclick="aller(\'anomalies\')">← Retour à la liste</button>' +
-    '<h2>' + esc(libelleRegle(a)) + '</h2>' +
-    '<p class="sous">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
-      (a.badge_code ? ' · badge ' + esc(a.badge_code) : '') + '</p>' +
-    (reste !== null && reste <= 4 ? '<div class="alerte erreur">' + (reste < 0
-      ? "Les images de cette période ne sont plus disponibles."
-      : "Il reste " + reste + " jour(s) pour consulter les images.") + '</div>' : '') +
-    '<div class="bloc"><div class="zone"><dl>' +
-      Object.keys(p).map(function(k){
-        const v = p[k];
-        return '<dt>' + esc(k.replace(/_/g," ")) + '</dt><dd>' +
-          esc(Array.isArray(v) ? v.join(", ") : v) + '</dd>'; }).join("") +
-      '<dt>Montant</dt><dd class="num">' + eur(a.montant_ttc) + '</dd>' +
-      '<dt>Score</dt><dd class="num">' + (a.score === null ? "—" : a.score) + '</dd>' +
-    '</dl></div></div>' +
-    (evenements.length ? '<div class="bloc">' + evenements.map(function(e){
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(e.type) + '</div>' +
-        '<div class="detail">' + esc(e.contenu || "") + ' · ' + jour(e.cree_le) + '</div></div></div>';
-    }).join("") + '</div>' : '') +
-    '<div class="bloc"><div class="zone">' +
-      '<textarea id="note" placeholder="Ce que vous avez constaté : vérification caméra, ' +
-        'explication du salarié, erreur de procédure…"></textarea><div class="actions">' +
-      '<button onclick="majAnomalie(' + id + ',null)">Enregistrer la note</button>' +
-      (peutClore
-        ? '<button onclick="majAnomalie(' + id + ',\'EXPLIQUEE\')">Écart expliqué</button>' +
-          '<button class="fort" onclick="majAnomalie(' + id + ',\'CONFIRMEE\')">Écart confirmé</button>' +
-          '<button onclick="majAnomalie(' + id + ',\'CLASSEE\')">Classer sans suite</button>'
-        : '<span style="align-self:center;color:var(--ardoise);font-size:13.5px">' +
-          'Votre note remonte à la direction, qui décide de la suite.</span>') +
-    '</div></div></div>';
-}
-
-async function majAnomalie(id, statut) {
-  const c = $("#note").value.trim();
-  if (!c && !statut) return;
-  await api("audit", "majAnomalie", { id:id, statut:statut, commentaire:c,
-    type: statut ? "EXPLICATION" : "COMMENTAIRE" });
-  aller("anomalies");
-}
+const parLots = async (table, lignes, taille = 500) => {
+  const plates = homogeneiser(lignes);
+  for (let i = 0; i < plates.length; i += taille)
+    await sb(table, { method: "POST", prefer: "return=minimal",
+                      body: JSON.stringify(plates.slice(i, i + taille)) });
+};
+const jours = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n);
+                          return x.toISOString().slice(0, 10); };
 
 /* ---------- dépôt ---------- */
 
-function moisDisponibles(n) {
-  const l = [], d = new Date();
-  for (let i = 0; i < (n || 14); i++) {
-    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    l.push([m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2,"0"),
-            MOIS_FR[m.getMonth()] + " " + m.getFullYear()]);
+async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, periode_fin,
+                         nature = "COURANT" }, ctx) {
+  if (!ctx.depot.includes(Number(restaurant_id)))
+    return { erreur: "Vous ne pouvez pas déposer pour ce restaurant." };
+
+  const p = parser(contenu, nom_fichier);
+  if (p.erreur) return { erreur: p.erreur, entetes: p.entetes };
+
+  const hash = crypto.createHash("sha256").update(contenu).digest("hex");
+  const [doublon] = await sb(
+    `imports?restaurant_id=eq.${restaurant_id}&fichier_hash=eq.${hash}&select=id,depose_le&limit=1`);
+  if (doublon) return { erreur: `Fichier déjà déposé le ${doublon.depose_le.slice(0, 10)}.` };
+
+  // La période est lue dans le fichier, jamais déclarée par le déposant :
+  // c'est ce qui empêche un dépôt tronqué de passer pour complet.
+  // Plusieurs rapports (flux caissiers, tickets non payants, responsable de
+  // comptage, synthèse) ne portent aucune date : la période vient alors de
+  // l'écran de dépôt. À défaut, on complète par le mois de la date connue.
+  const debut = p.periode_debut || periode_debut;
+  let fin = p.periode_fin || periode_fin;
+  if (debut && !fin) {
+    const d = new Date(debut);
+    fin = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
   }
-  return l;
-}
-function bornesMois(mois) {
-  const an = Number(mois.slice(0,4)), m = Number(mois.slice(5,7));
-  return [mois + "-01", mois + "-" + String(new Date(an, m, 0).getDate()).padStart(2,"0")];
-}
+  if (!debut || !fin)
+    return { erreur: "Période indéterminable : choisissez le mois avant de déposer.",
+             besoin_periode: true };
 
-async function vueDepot(params) {
-  const restos = E.restaurants.filter(r => E.droits.depot.indexOf(r.id) >= 0);
-  if (!restos.length) { $("#vue").innerHTML =
-    '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de dépôt.</div>'; return; }
-  E.depot = {
-    restaurant_id: (params && params.restaurant_id) || (E.depot && E.depot.restaurant_id) || restos[0].id,
-    mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0]
-  };
-  const rid = E.depot.restaurant_id, mois = E.depot.mois;
-  const bornes = bornesMois(mois);
-
-  const d = await api("audit", "depots", { restaurant_id:rid, debut:bornes[0], fin:bornes[1] });
-  const deposes = {};
-  d.imports.forEach(function(i){
-    if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
-  const visibles = d.types.filter(t => t.obligatoire || deposes[t.code]);
-  E.attendus = d.types.filter(t => t.obligatoire).length;
-  E.faits = d.types.filter(t => t.obligatoire && deposes[t.code]).length;
-
-  $("#vue").innerHTML =
-    '<h2>Déposer les exports</h2>' +
-    '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
-      'en CSV chaque rapport de la liste. Elle suit l\'ordre du menu Audit.</p>' +
-    '<div class="duo">' +
-      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'depot\',' +
-        '{restaurant_id:Number(this.value),mois:\'' + mois + '\'})">' +
-        restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
-          '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
-      '<label class="champ"><span>Période</span><select onchange="aller(\'depot\',' +
-        '{restaurant_id:' + rid + ',mois:this.value})">' +
-        moisDisponibles().map(o => '<option value="' + o[0] + '"' +
-          (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
-        '</select></label>' +
-    '</div>' +
-    '<div class="progression"><div class="jauge"><span id="jauge" style="width:' +
-      (E.attendus ? E.faits / E.attendus * 100 : 0) + '%"></span></div>' +
-      '<b id="compteur">' + E.faits + ' sur ' + E.attendus + '</b>' +
-      ' rapports déposés pour cette période</div>' +
-    '<div class="bloc">' + visibles.map(t => ligneDepot(t, deposes[t.code])).join("") + '</div>' +
-    '<div id="bilan"></div>' +
-    '<p class="sous" style="margin-top:14px">Les rapports « chaque semaine » alimentent la ' +
-      'vérification caméra : passé 14 jours, les images ne sont plus disponibles.</p>';
-}
-
-function ligneDepot(t, imp) {
-  const id = "d" + t.code;
-  const multi = t.code === "SYNTHESE_CA";
-  return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') + '>' +
-    '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
-    (multi ? ' <span class="etiquette">9 fichiers</span>' : '') +
-    (t.frequence === "HEBDO" ? ' <span class="etiquette">chaque semaine</span>' : '') +
-    '</div><div class="detail">' +
-    (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes'
-         : esc(t.usage_audit || "à déposer")) + '</div></div>' +
-    '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv" ' +
-      'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
-    '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
-      id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
-}
-
-/* Le dépôt se fait ligne par ligne, sans recharger l'écran : on peut
-   enchaîner les rapports sans perdre le fil. */
-async function envoyer(fichiers, codeAttendu, idLigne) {
-  const rid = E.depot.restaurant_id;
-  const bornes = bornesMois(E.depot.mois);
-  const ligne = document.getElementById("l" + idLigne);
-  const detail = ligne.querySelector(".detail");
-  const bouton = ligne.querySelector(".bouton-depot");
-  const dejaFait = ligne.dataset.fait === "1";
-  bouton.disabled = true;
-  const initial = bouton.textContent;
-  bouton.textContent = "…";
-
-  let ok = 0, lignesLues = 0, ecarts = 0, aQualifier = 0;
-  const soucis = [];
-  for (const f of fichiers) {
-    detail.textContent = "envoi de " + f.name + "…";
-    try {
-      const contenu = await f.text();
-      const d = await api("import", "deposer", { contenu:contenu, nom_fichier:f.name,
-        restaurant_id:rid, periode_debut:bornes[0], periode_fin:bornes[1] });
-      const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
-      const recu = d.synthese ? "SYNTHESE" : d.type;
-      const bonneCase = recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES");
-      if (!bonneCase) soucis.push(f.name + " contient un rapport " + recu + " : rangé au bon endroit");
-      ok++; lignesLues += d.nb || 0;
-      if (d.anomalies && d.anomalies.creees) ecarts += d.anomalies.creees;
-      if (d.libelles_a_qualifier) aQualifier += d.libelles_a_qualifier.length;
-    } catch (e) { soucis.push(f.name + " : " + e.message); }
+  // Les 9 fichiers Synthèse ne portent ni site ni période : contrôle par
+  // recoupement avec deux rapports datés déjà en base.
+  let recoup = null;
+  if (p.synthese === "DIVERS") {
+    const [an, rep] = await Promise.all([
+      sb(`annulations_lignes?restaurant_id=eq.${restaurant_id}&date_pos=gte.${debut}`
+        + `&date_pos=lte.${fin}T23:59:59&select=montant`),
+      sb(`repas_employes?restaurant_id=eq.${restaurant_id}&date_heure=gte.${debut}`
+        + `&date_heure=lte.${fin}T23:59:59&select=id`)
+    ]);
+    if (an.length)
+      recoup = recouperSynthese(p.brut[0], an.reduce((t, x) => t + Number(x.montant), 0), rep.length);
   }
 
-  if (ok) {
-    ligne.dataset.fait = "1";
-    bouton.textContent = "Remplacer";
-    bouton.classList.add("fait");
-    detail.innerHTML = '<span style="color:var(--vert);font-weight:600">✓ déposé</span> · ' +
-      lignesLues + ' lignes' + (soucis.length ? ' · ' + soucis.map(esc).join(' · ') : '');
-    if (!dejaFait) majJauge(1);
+  const [imp] = await sb("imports", { method: "POST", body: JSON.stringify({
+    restaurant_id: Number(restaurant_id),
+    type_rapport_code: p.synthese ? "SYNTHESE_CA" : p.type,
+    periode_debut: debut, periode_fin: fin,
+    fichier_nom: nom_fichier, fichier_hash: hash, nb_lignes: p.nb, nature,
+    recoupement_ok: recoup ? recoup.ok : null,
+    recoupement_detail: recoup ? recoup.detail : null,
+    statut: recoup && !recoup.ok ? "REJETE" : "OK",
+    depose_par: ctx.id }) });
+
+  if (recoup && !recoup.ok)
+    return { erreur: "Ce fichier ne correspond pas à la période annoncée.", detail: recoup.detail };
+
+  if (p.synthese)
+    return { ok: true, import_id: imp.id, type: p.type, synthese: p.synthese, nb: p.nb };
+
+  const lignes = p.donnees.map(d => ({ ...d, import_id: imp.id, restaurant_id: Number(restaurant_id) }));
+
+  // Les flux caissiers (1) et (2) alimentent la même ligne : (1) apporte
+  // corrections/annulations/diff. de caisse, (2) les modes de paiement.
+  const mois = debut.slice(0, 8) + "01";
+
+  if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
+    // les rapports cumulés se terminent par une ligne de totaux, sans badge
+    const utiles = lignes.filter(l => l.badge_code && String(l.badge_code).trim());
+    const cible = `${p.table}?on_conflict=restaurant_id,mois,badge_code`;
+    const entete = { prefer: "resolution=merge-duplicates,return=minimal" };
+    if (p.fusion) {
+      // le rapport (2) complète la ligne créée par le (1) : envoi ligne à
+      // ligne pour ne pas écraser les colonnes que lui seul renseigne
+      for (const l of utiles)
+        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([{ ...l, mois }]) });
+    } else {
+      for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
+        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([l]) });
+    }
+  } else if (p.table === "flux_responsables") {
+    const utiles = lignes.filter(l => l.responsable && String(l.responsable).trim());
+    for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
+      await sb("flux_responsables?on_conflict=restaurant_id,mois,responsable",
+        { method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+          body: JSON.stringify([l]) });
   } else {
-    bouton.textContent = initial;
-    detail.innerHTML = '<span style="color:var(--rouge)">' + esc(soucis.join(" · ")) + '</span>';
+    await parLots(p.table, lignes);
   }
-  bouton.disabled = false;
-  annoncer(ecarts, aQualifier);
+
+  const nouveaux = p.table === "remises_lignes" ? await enregistrerLibelles(p.donnees, debut) : [];
+  const anomalies = await genererAnomalies(Number(restaurant_id), debut, fin);
+
+  return { ok: true, import_id: imp.id, type: p.type, nb: p.nb,
+           periode: [debut, fin], libelles_a_qualifier: nouveaux, anomalies };
 }
 
-function majJauge(n) {
-  E.faits = Math.min((E.faits || 0) + n, E.attendus);
-  const j = document.getElementById("jauge"), c = document.getElementById("compteur");
-  if (j) j.style.width = (E.attendus ? E.faits / E.attendus * 100 : 0) + "%";
-  if (c) c.textContent = E.faits + " sur " + E.attendus;
+/* ---------- libellés de remise appris en marchant ---------- */
+
+async function enregistrerLibelles(donnees, date) {
+  // « 2 remises », « 3 remises » sont des regroupements du rapport,
+  // pas des libellés paramétrés : ils ne remontent jamais
+  const vus = [...new Set(donnees.map(d => d.libelle_remise)
+    .filter(l => l && !/^\d+\s+remises?$/i.test(l)))];
+  if (!vus.length) return [];
+  const connus = await sb(`libelles_remise?select=libelle,statut`);
+  const set = new Set(connus.map(c => c.libelle));
+  const nouveaux = vus.filter(l => !set.has(l));
+  if (nouveaux.length)
+    await sb("libelles_remise", { method: "POST", prefer: "return=minimal",
+      body: JSON.stringify(nouveaux.map(l => ({
+        libelle: l, famille: (l.match(/^\[([^\]]+)\]/) || [, "AUTRE"])[1],
+        premiere_vue: date, derniere_vue: date }))) });
+  await sb(`libelles_remise?libelle=in.(${vus.map(v => `"${v.replace(/"/g, '')}"`).join(",")})`,
+    { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ derniere_vue: date }) });
+  return nouveaux;
 }
 
-function annoncer(ecarts, aQualifier) {
-  E.bilan = { ecarts: (E.bilan ? E.bilan.ecarts : 0) + ecarts,
-              qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
-  const b = document.getElementById("bilan");
-  if (!b || (!E.bilan.ecarts && !E.bilan.qualif)) return;
-  const p = [];
-  if (E.bilan.ecarts) p.push('<a href="#" onclick="aller(\'anomalies\');return false">' +
-    E.bilan.ecarts + ' écart(s) détecté(s)</a>');
-  if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'libelles\');return false">' +
-    E.bilan.qualif + ' remise(s) à qualifier</a>');
-  b.innerHTML = '<div class="alerte info">' + p.join(" · ") + '</div>';
+/* ---------- génération des anomalies datées ---------- */
+
+async function genererAnomalies(restaurant_id, debut, fin) {
+  const creees = [];
+  const pousser = a => creees.push({ restaurant_id, frequence: "HEBDO", statut: "A_VERIFIER", ...a });
+
+  const [sessions, annuls, remises, cos, libelles] = await Promise.all([
+    sb(`sessions_caisse?restaurant_id=eq.${restaurant_id}&date_fiscale=gte.${debut}`
+      + `&date_fiscale=lte.${fin}&select=*`),
+    sb(`annulations_lignes?restaurant_id=eq.${restaurant_id}&date_pos=gte.${debut}`
+      + `&date_pos=lte.${fin}T23:59:59&select=*`),
+    sb(`remises_lignes?restaurant_id=eq.${restaurant_id}&date_reelle=gte.${debut}`
+      + `&date_reelle=lte.${fin}T23:59:59&select=*`),
+    sb(`co_lignes?restaurant_id=eq.${restaurant_id}&date_reelle=gte.${debut}`
+      + `&date_reelle=lte.${fin}&select=*&a_risque=is.true`),
+    sb(`libelles_remise?select=libelle,statut,neutralise_ratio`)
+  ]);
+  const statutLibelle = new Map(libelles.map(l => [l.libelle, l.statut]));
+
+  // 1. Écarts de caisse. Les excédents plafonnent naturellement à quelques
+  //    euros : un manquant important n'est pas le symétrique du bruit.
+  for (const s of sessions) {
+    const ecart = Number(s.especes_declare) - Number(s.especes_theorique);
+    if (ecart > -SEUIL_ECART_SESSION) continue;
+    const tardif = (s.fin_session || "").slice(11, 16) >= "22:00";
+    pousser({
+      niveau: "SESSION", ratio: "ESPECES",
+      periode_debut: s.fin_session || s.date_fiscale, periode_fin: s.fin_session || s.date_fiscale,
+      badge_code: s.badge_code, valeur: ecart, montant_ttc: ecart,
+      score: 30 + (tardif ? 15 : 0),
+      regles_declenchees: ["SESSION_ECART_ESPECES", ...(tardif ? ["SESSION_ECART_TARDIF"] : [])],
+      echeance_camera: jours(s.date_fiscale, RETENTION_CAMERA),
+      pieces: { caisse: s.caisse, theorique: s.especes_theorique, declare: s.especes_declare,
+                validee_par: s.valide_par, fin_session: s.fin_session }
+    });
+  }
+
+  // 2. Annulations hors délai : c'est le délai qui permet de cibler après
+  //    coup les gros tickets encaissés en espèces.
+  for (const a of annuls) {
+    const h = a.delai_heures ?? (a.date_neg && a.date_pos
+      ? (new Date(a.date_neg) - new Date(a.date_pos)) / 3600e3 : null);
+    if (h === null || h <= DELAI_ANNULATION_H) continue;
+    pousser({
+      niveau: "TICKET", ratio: "ANNULATIONS",
+      periode_debut: a.date_pos, periode_fin: a.date_neg,
+      badge_code: a.vendeur_pos, valeur: h, montant_ttc: a.montant,
+      score: Math.min(25 + Math.floor(h / 12) * 5, 45),
+      regles_declenchees: ["ANNUL_DELAI"],
+      echeance_camera: jours(String(a.date_pos).slice(0, 10), RETENTION_CAMERA),
+      pieces: { ticket_positif: a.num_ticket_pos, ticket_negatif: a.num_ticket_neg,
+                delai_heures: Math.round(h * 100) / 100, valide_par: a.valide_par_neg }
+    });
+  }
+
+  // 3. Remises sur libellé non qualifié ou non autorisé. Un libellé créé
+  //    localement dans le paramétrage caisse se signale ainsi tout seul.
+  const parLibelle = {};
+  for (const r of remises) {
+    const st = statutLibelle.get(r.libelle_remise) || "A_QUALIFIER";
+    if (st === "AUTORISE" || st === "OPERATION") continue;
+    (parLibelle[r.libelle_remise] ??= []).push(r);
+  }
+  for (const [libelle, lignes] of Object.entries(parLibelle)) {
+    const st = statutLibelle.get(libelle) || "A_QUALIFIER";
+    const dates = lignes.map(l => l.date_reelle).sort();
+    const managers = [...new Set(lignes.map(l => l.manager_code))];
+    pousser({
+      niveau: "TICKET", ratio: "REMISES_50",
+      periode_debut: dates[0], periode_fin: dates[dates.length - 1],
+      badge_code: managers.length === 1 ? managers[0] : null,
+      valeur: lignes.length,
+      montant_ttc: lignes.reduce((t, l) => t + Number(l.montant_remise || 0), 0),
+      score: st === "NON_AUTORISE" ? 40 : 30,
+      regles_declenchees: [st === "NON_AUTORISE" ? "REMISE_LIBELLE_INTERDIT" : "REMISE_LIBELLE_INCONNU"],
+      echeance_camera: jours(String(dates[dates.length - 1]).slice(0, 10), RETENTION_CAMERA),
+      pieces: { libelle, occurrences: lignes.length, managers,
+                tickets: lignes.slice(0, 20).map(l => l.num_ticket),
+                heures: [...new Set(lignes.map(l => String(l.date_reelle).slice(11, 13) + "h"))].sort() }
+    });
+  }
+
+  // 4. Commandes ouvertes : concentration de fin de service et part annulée
+  //    par le système, donc sans traçabilité de caisse.
+  const parJour = {};
+  for (const c of cos) (parJour[c.date_reelle] ??= []).push(c);
+  for (const [jour, lignes] of Object.entries(parJour)) {
+    const total = lignes.reduce((t, c) => t + Number(c.montant_ttc || 0), 0);
+    const tardives = lignes.filter(c => (c.heure || "") >= "21:00");
+    const mTard = tardives.reduce((t, c) => t + Number(c.montant_ttc || 0), 0);
+    const auto = lignes.filter(c => String(c.annule_par).toUpperCase() === "AUTOMATIQUE");
+    const mAuto = auto.reduce((t, c) => t + Number(c.montant_ttc || 0), 0);
+    const regles = [];
+    if (total > 0 && mTard / total > 0.5 && mTard > 50) regles.push("CO_HORS_RUSH");
+    if (total > 0 && mAuto / total > 0.5 && mAuto > 50) regles.push("CO_AUTO_DOMINANT");
+    if (!regles.length) continue;
+    pousser({
+      niveau: "JOUR", ratio: "CO",
+      periode_debut: jour, periode_fin: jour,
+      valeur: total, montant_ttc: total,
+      score: (regles.includes("CO_HORS_RUSH") ? 15 : 0) + (regles.includes("CO_AUTO_DOMINANT") ? 20 : 0),
+      regles_declenchees: regles,
+      echeance_camera: jours(jour, RETENTION_CAMERA),
+      pieces: { total_jour: total, apres_21h: mTard, automatique: mAuto,
+                badges: [...new Set(lignes.map(c => c.annule_par))] }
+    });
+  }
+
+  if (!creees.length) return { creees: 0 };
+
+  // On ne recrée pas une anomalie déjà ouverte sur la même période.
+  const existantes = await sb(`anomalies?restaurant_id=eq.${restaurant_id}`
+    + `&periode_debut=gte.${debut}&periode_debut=lte.${fin}T23:59:59&select=niveau,ratio,periode_debut,badge_code`);
+  // une date « 2026-08-11 » et la même relue « 2026-08-11T00:00:00+00 »
+  // doivent produire la même clé, sinon l'anomalie est recréée à chaque dépôt
+  const horodate = v => { const d = new Date(v); return isNaN(d) ? String(v) : d.toISOString().slice(0, 16); };
+  const cle = a => `${a.niveau}|${a.ratio}|${horodate(a.periode_debut)}|${a.badge_code || ""}`;
+  const deja = new Set(existantes.map(cle));
+  const aCreer = creees.filter(a => !deja.has(cle(a)));
+  if (aCreer.length)
+    await parLots("anomalies", aCreer);
+  return { creees: aCreer.length, ignorees: creees.length - aCreer.length };
 }
 
-/* ---------- remises ---------- */
+/* ---------- routage ---------- */
 
-/* Une centaine de libellés par mois, presque tous nationaux : on
-   qualifie par famille, et on ne descend au libellé que pour le
-   paramétrage local, seul endroit où un libellé peut avoir été créé
-   dans le restaurant. */
-async function vueLibelles() {
-  const d = await api("audit", "libellesAQualifier");
-  const familles = {};
-  d.libelles.forEach(function(l){
-    const f = l.famille || "SANS FAMILLE";
-    (familles[f] = familles[f] || []).push(l);
-  });
-  const noms = Object.keys(familles).sort(function(a,b){ return familles[b].length - familles[a].length; });
-
-  $("#vue").innerHTML =
-    '<h2>Remises à qualifier</h2>' +
-    '<p class="sous">Chaque libellé rencontré pour la première fois s\'affiche ici. ' +
-      'Qualifiez une famille entière en un clic ; descendez au libellé pour le ' +
-      'paramétrage local, seul endroit où une remise peut avoir été créée dans le restaurant.</p>' +
-    (noms.length ? noms.map(function(f){
-      const l = familles[f], ids = l.map(x => x.id).join(",");
-      return '<div class="bloc"><div class="ligne"><div class="corps">' +
-        '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length + ' libellé(s)</span></div>' +
-        '<div class="detail">' + esc(l.slice(0,3).map(x => x.libelle).join(" · ")) +
-        (l.length > 3 ? " · et " + (l.length - 3) + " autre(s)" : "") + '</div>' +
-        '<div class="actions">' +
-        '<button onclick="qualifierLot([' + ids + '],\'AUTORISE\',0)">Toute la famille est normale</button>' +
-        '<button onclick="qualifierLot([' + ids + '],\'OPERATION\',1)">Opération commerciale</button>' +
-        '<button onclick="basculer(\'g' + esc(f).replace(/[^a-zA-Z]/g,"") + '\')">Voir le détail</button>' +
-        '</div></div></div>' +
-        '<div id="g' + esc(f).replace(/[^a-zA-Z]/g,"") + '" style="display:none">' +
-        l.map(function(x){
-          return '<div class="ligne"><div class="corps"><div class="titre">' + esc(x.libelle) + '</div>' +
-            '<div class="detail">Vu du ' + jour(x.premiere_vue) + ' au ' + jour(x.derniere_vue) + '</div>' +
-            '<div class="actions">' +
-            '<button onclick="qualifierLot([' + x.id + '],\'AUTORISE\',0)">Normale</button>' +
-            '<button onclick="qualifierLot([' + x.id + '],\'OPERATION\',1)">Opération</button>' +
-            '<button onclick="qualifierLot([' + x.id + '],\'NON_AUTORISE\',0)">Non autorisée</button>' +
-            '</div></div></div>';
-        }).join("") + '</div></div>';
-    }).join("")
-    : '<div class="bloc"><div class="vide"><b>Tout est qualifié</b>' +
-      'Aucune nouvelle remise depuis le dernier dépôt.</div></div>');
-}
-
-function basculer(id) {
-  const e = document.getElementById(id);
-  e.style.display = e.style.display === "none" ? "block" : "none";
-}
-
-async function qualifierLot(ids, statut, neutralise) {
-  for (const id of ids)
-    await api("audit", "qualifierLibelle", { id:id, statut:statut, neutralise:neutralise });
-  aller("libelles");
-}
-
-/* ---------- équipe ---------- */
-
-async function vueEquipe(params) {
-  const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
-  const id = (params && params.restaurant_id) || (restos[0] && restos[0].id);
-  if (!id) { $("#vue").innerHTML = '<div class="vide"><b>Aucun restaurant</b></div>'; return; }
-  const d = await api("audit", "salaries", { restaurant_id:id });
-  $("#vue").innerHTML =
-    '<h2>Équipe</h2>' +
-    '<p class="sous">Le poste habituel sert à interpréter le taux d\'espèces : un poste au drive ' +
-      'encaisse naturellement moins d\'espèces qu\'une borne.</p>' +
-    '<label class="champ"><span>Restaurant</span>' +
-      '<select onchange="aller(\'equipe\',{restaurant_id:Number(this.value)})">' +
-      restos.map(r => '<option value="' + r.id + '"' + (r.id === id ? " selected" : "") + '>' +
-        esc(r.nom) + '</option>').join("") + '</select></label>' +
-    '<div class="bloc">' + (d.salaries.length ? d.salaries.map(function(s){
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(s.badge_code) +
-        (s.nom_complet ? " · " + esc(s.nom_complet) : "") + '</div><div class="detail">' +
-        esc(s.fonction || "fonction à préciser") + ' · ' +
-        esc(s.poste_habituel || "poste à préciser") + '</div></div>' +
-        (s.confiance_mapping === "VALIDE" ? '<span class="etiquette ok">validé</span>'
-                                          : '<span class="etiquette urgent">à valider</span>') +
-        '</div>';
-    }).join("") : '<div class="vide"><b>Aucun salarié</b>' +
-      'Les badges apparaîtront après le premier dépôt.</div>') + '</div>';
-}
-
-/* ---------- accès ---------- */
-
-async function vueAdmin() {
-  const d = await api("audit", "utilisateurs");
-  $("#vue").innerHTML =
-    '<h2>Accès</h2>' +
-    '<p class="sous">Un directeur dépose et consulte son restaurant. Seuls la direction et les ' +
-      'superviseurs peuvent clore un écart.</p>' +
-    '<div class="bloc">' + d.utilisateurs.map(function(u){
-      const n = d.perimetres.filter(p => p.utilisateur_id === u.id).length;
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
-        '<div class="detail">' + esc(u.role) + ' · ' + n + ' restaurant(s) · ' +
-        (u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté") +
-        '</div></div>' + (u.actif ? "" : '<span class="etiquette">inactif</span>') + '</div>';
-    }).join("") + '</div>' +
-    '<div class="bloc"><div class="zone">' +
-      '<h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>' +
-      '<label class="champ"><span>Nom</span><input id="n-nom"></label>' +
-      '<label class="champ"><span>E-mail</span><input id="n-email" type="email"></label>' +
-      '<label class="champ"><span>Rôle</span><select id="n-role">' +
-        '<option value="DIRECTEUR">Directeur</option>' +
-        '<option value="SUPERVISEUR">Superviseur</option>' +
-        '<option value="CDG">Contrôle de gestion</option>' +
-        '<option value="DG">Direction générale</option></select></label>' +
-      '<label class="champ"><span>Code (6 chiffres minimum si la personne peut clore)</span>' +
-        '<input id="n-pin" inputmode="numeric"></label>' +
-      '<label class="champ"><span>Restaurants</span>' +
-        '<select id="n-restos" multiple size="7">' +
-        E.restaurants.map(r => '<option value="' + r.id + '">' + esc(r.nom) + '</option>').join("") +
-        '</select></label><div id="err-admin"></div>' +
-      '<button class="principal" onclick="creerUtilisateur()">Créer l\'accès</button>' +
-    '</div></div>';
-}
-
-async function creerUtilisateur() {
-  const role = $("#n-role").value;
-  const clot = role !== "DIRECTEUR";
-  const perimetres = Array.prototype.map.call($("#n-restos").selectedOptions, function(o){
-    return { restaurant_id:Number(o.value), peut_deposer:true, peut_lire:true, peut_cloturer:clot }; });
+module.exports = async (req, res) => {
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ erreur: "POST attendu" });
   try {
-    await api("audit", "creerUtilisateur", { nom:$("#n-nom").value.trim(),
-      email:$("#n-email").value.trim(), role:role, pin:$("#n-pin").value.trim(),
-      perimetres:perimetres });
-    aller("admin");
-  } catch (e) { $("#err-admin").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>'; }
-}
-
-/* ---------- amorçage ---------- */
-
-E.jeton = localStorage.getItem("jeton-audit");
-if (E.jeton) demarrer().catch(seDeconnecter);
-</script>
-</body>
-</html>
+    const corps = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const session = lireJeton(corps.jeton);
+    if (!session) return res.status(401).json({ erreur: "Session expirée" });
+    const [u] = await sb(`utilisateurs?id=eq.${session.uid}&select=id,nom,role,actif`);
+    if (!u || !u.actif) return res.status(401).json({ erreur: "Utilisateur inactif" });
+    const perim = await rpc("perimetre_utilisateur", { uid: session.uid });
+    const ctx = { ...u, depot: perim.filter(p => p.peut_deposer).map(p => p.restaurant_id) };
+    return res.status(200).json(await deposer(corps, ctx));
+  } catch (e) {
+    return res.status(500).json({ erreur: String(e.message || e) });
+  }
+};
