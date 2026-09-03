@@ -189,11 +189,29 @@ const actions = {
   async qualifierLibelle({ id, statut, operation_id, neutralise, commentaire }, ctx) {
     if (!["DG", "SUPERVISEUR", "CDG"].includes(ctx.role))
       return { erreur: "Réservé à la direction et au contrôle de gestion." };
-    await sb(`libelles_remise?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({
+    const [maj] = await sb(`libelles_remise?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({
       statut, operation_id: operation_id || null,
       neutralise_ratio: !!neutralise, commentaire: commentaire || null,
       qualifie_par: ctx.id, qualifie_le: new Date().toISOString() }) });
-    return { ok: true };
+    // un libellé jugé normal ne doit plus encombrer la file : les écarts
+    // qu'il a produits se referment d'eux-mêmes
+    let refermees = 0;
+    if (maj && ["AUTORISE", "OPERATION"].includes(statut)) {
+      const ouvertes = await sb(`anomalies?statut=eq.A_VERIFIER&ratio=eq.REMISES_50`
+        + `&select=id,pieces`);
+      const cibles = ouvertes.filter(a => a.pieces && a.pieces.libelle === maj.libelle);
+      for (const a of cibles) {
+        await sb(`anomalies?id=eq.${a.id}`, { method: "PATCH", prefer: "return=minimal",
+          body: JSON.stringify({ statut: "CLASSEE", cloture_par: ctx.id,
+                                 cloture_le: new Date().toISOString() }) });
+        await sb("anomalie_evenements", { method: "POST", prefer: "return=minimal",
+          body: JSON.stringify({ anomalie_id: a.id, auteur_id: ctx.id, type: "CHGT_STATUT",
+            contenu: statut === "OPERATION" ? "Opération commerciale déclarée"
+                                            : "Remise qualifiée de normale" }) });
+        refermees++;
+      }
+    }
+    return { ok: true, refermees };
   },
 
   async ficheSalarie({ restaurant_id, badge_code }, ctx) {
