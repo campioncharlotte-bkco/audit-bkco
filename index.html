@@ -317,7 +317,10 @@ async function vueAnalyse(params) {
     '</div>' +
     (d.encadrants.length ? d.encadrants.map(carteEncadrant).join("")
       : '<div class="bloc"><div class="vide"><b>Aucun encadrant sur ce mois</b>' +
-        'Déposez la déclaration de caisse de la période.</div></div>');
+        'Déposez la déclaration de caisse de la période.</div></div>') +
+    '<div class="actions"><button onclick="recalculer(this)">Recalculer tout l\'historique' +
+      ' (' + d.mois_disponibles.length + ' mois)</button></div>' +
+    '<div id="recalcul"></div>';
 }
 
 function carteEncadrant(e) {
@@ -401,6 +404,29 @@ function carteEncadrant(e) {
       (lignesFaits ? '<div class="sectionnette">Les ' + e.nb_faits +
         ' comptages en manque</div>' + lignesFaits : "") +
     '</div></div>';
+}
+
+/* Rejoue l'agrégation mensuelle et les tendances sur tous les mois chargés.
+   À lancer après un import de plusieurs mois : les calculs ne se déclenchent
+   qu'au dépôt, donc un mois chargé avant cette version n'a jamais été traité. */
+async function recalculer(bouton) {
+  const mois = (E.dossier && E.dossier.mois_disponibles) || [];
+  const zone = document.getElementById("recalcul");
+  bouton.disabled = true;
+  let faits = 0; const soucis = [];
+  for (const m of mois) {
+    bouton.textContent = "Calcul " + moisLisible(m) + "… (" + (faits + 1) + "/" + mois.length + ")";
+    try {
+      const r = await api("import", "cloturer", { restaurant_id: E.an.restaurant_id, mois: m });
+      if (r && r.ok === false) soucis.push(moisLisible(m) + " : " + (r.motif || "impossible"));
+      else faits++;
+    } catch (e) { soucis.push(moisLisible(m) + " : " + e.message); }
+  }
+  zone.innerHTML = '<div class="alerte ' + (soucis.length ? "erreur" : "info") + '">' +
+    faits + ' mois sur ' + mois.length + ' recalculés.' +
+    (soucis.length ? '<br>' + soucis.map(esc).join("<br>") : '') + '</div>';
+  bouton.disabled = false;
+  bouton.textContent = "Recalculer tout l'historique (" + mois.length + " mois)";
 }
 
 async function expliquer(code, id, bouton) {
@@ -574,6 +600,12 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
       const a = await api("import", "analyser",
         { restaurant_id: rid, debut: bornes[0], fin: bornes[1] });
       ecarts = (a.anomalies && a.anomalies.creees) || 0;
+      // agrégation mensuelle et tendances : sans cet appel, l'historique
+      // s'accumule en base sans jamais être exploité
+      detail.textContent = "calcul des tendances…";
+      const c = await api("import", "cloturer",
+        { restaurant_id: rid, mois: E.depot.mois });
+      if (c && c.ok === false) soucis.push("tendances non calculées : " + (c.motif || ""));
     } catch (e) { soucis.push("analyse : " + e.message); }
   }
 
