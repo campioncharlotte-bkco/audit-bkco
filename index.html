@@ -270,11 +270,13 @@ async function vueAnalyse(params) {
   if (!restos.length) { $("#vue").innerHTML =
     '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de lecture.</div>'; return; }
   E.an = { restaurant_id: p.restaurant_id || (E.an && E.an.restaurant_id) || restos[0].id,
-           mois: p.mois !== undefined ? p.mois : (E.an && E.an.mois) || null };
+           mois: p.mois !== undefined ? p.mois : (E.an && E.an.mois) || null,
+           periode: p.periode || (E.an && E.an.periode) || 1 };
   const rid = E.an.restaurant_id;
 
-  const d = await api("analyse", "synthese", { restaurant_id: rid, mois: E.an.mois });
-  E.an.mois = d.mois;
+  const d = await api("analyse", "synthese",
+    { restaurant_id: rid, mois: E.an.mois, periode: E.an.periode });
+  E.an.mois = d.mois; E.an.periode = d.periode;
   E.dossier = d;
 
   const selecteurs =
@@ -297,11 +299,26 @@ async function vueAnalyse(params) {
   const r = d.resume;
   const rouges = d.encadrants.filter(e => e.feu === "ROUGE").length;
 
+  /* On annonce la fenêtre réellement analysée, pas celle demandée : si la
+     base ne contient que quatre mois, écrire « 6 mois » serait faux. */
+  const nbMois = d.fenetre.length;
+  const libFenetre = nbMois <= 1 ? moisLisible(d.mois)
+    : moisLisible(d.fenetre[0]) + " → " + moisLisible(d.fenetre[nbMois - 1]) +
+      " (" + nbMois + " mois)";
+
+  const periodes = '<div class="actions" style="margin:0 0 16px">' +
+    [[1,"Le mois"],[3,"3 mois"],[6,"6 mois"]].map(function(o){
+      return '<button' + (E.an.periode === o[0] ? ' class="fort"' : '') +
+        ' onclick="aller(\'analyse\',{periode:' + o[0] + '})">' + o[1] + '</button>';
+    }).join("") +
+    '<span style="align-self:center;color:var(--ardoise);font-size:13.5px;margin-left:6px">' +
+      esc(libFenetre) + '</span></div>';
+
   $("#vue").innerHTML =
     '<h2>Analyse</h2>' +
     '<p class="sous">Une carte par encadrant. Le classement compare chacun aux autres ' +
       'encadrants du même restaurant, sur le même mois — pas à un seuil théorique.</p>' +
-    selecteurs +
+    selecteurs + periodes +
     '<div class="bloc"><div class="chiffres">' +
       '<div><b>' + r.sessions + '</b><span>caisses comptées</span></div>' +
       '<div><b class="' + (r.montant_manquants < 0 ? "montant negatif" : "") + '">' +
@@ -338,7 +355,7 @@ function carteEncadrant(e) {
 
   /* Le mois précédent du même encadrant, affiché sans dépliage : c'est
      souvent le signal le plus parlant et il était enterré. */
-  const p = e.precedent;
+  const p = E.an.periode === 1 ? e.precedent : null;
   let evolution = "";
   if (p) {
     const av = Number(p.ecart_par_session) || 0, ap = Number(e.ecart_par_session) || 0;
@@ -367,10 +384,10 @@ function carteEncadrant(e) {
   }).join("");
 
   const lignesMois = hist.map(function(h){
-    const courant = h.mois === e.historique[e.historique.length - 1].mois;
-    return '<div class="ligne"' + (courant ? ' style="background:var(--papier)"' : '') +
+    return '<div class="ligne"' + (h.dans_periode ? ' style="background:var(--papier)"' : '') +
       '><div class="corps">' +
-      '<div class="titre" style="font-weight:500">' + moisLisible(h.mois) + '</div>' +
+      '<div class="titre" style="font-weight:500">' + moisLisible(h.mois) +
+        (h.dans_periode ? ' <span class="etiquette">dans la période</span>' : '') + '</div>' +
       '<div class="detail">' + h.sessions + ' caisses validées · ' +
         (h.part_deficit || 0) + ' % en manque</div></div>' +
       '<div class="montant num negatif">' + eur(h.ecart_par_session) + '</div></div>';
@@ -390,7 +407,8 @@ function carteEncadrant(e) {
       '<div><b class="montant negatif">' + eur(e.ecart_par_session) + '</b>' +
         '<span>par caisse</span></div>' +
       '<div><b>' + eur(e.mediane_pairs) + '</b><span>médiane du restaurant</span></div>' +
-      '<div><b>' + e.sessions + '</b><span>caisses validées</span></div>' +
+      '<div><b>' + e.sessions + '</b><span>caisses validées' +
+        (e.mois_presents > 1 ? ' · ' + e.mois_presents + ' mois' : '') + '</span></div>' +
     '</div>' +
     (traits ? '<div class="raison">' + traits + '</div>' : "") +
     evolution +
@@ -434,7 +452,8 @@ async function expliquer(code, id, bouton) {
   bouton.disabled = true; bouton.textContent = "Analyse en cours…";
   try {
     const d = await api("analyse", "expliquer",
-      { restaurant_id: E.an.restaurant_id, mois: E.an.mois, code: code });
+      { restaurant_id: E.an.restaurant_id, mois: E.an.mois,
+        periode: E.an.periode, code: code });
     zone.innerHTML = '<div class="ia"><span class="marque">Lecture de la situation</span>' +
       esc(d.texte).replace(/\n/g, "<br>") + '</div>';
     bouton.parentElement.style.display = "none";
