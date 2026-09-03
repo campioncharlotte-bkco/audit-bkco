@@ -604,7 +604,12 @@ function annoncer(aQualifier, ecarts) {
               ecarts: (E.bilan ? E.bilan.ecarts : 0) + (ecarts || 0) };
   const b = document.getElementById("bilan");
   if (!b) return;
-  const p = ['<a href="#" onclick="aller(\'analyse\');return false">Voir l\'analyse' +
+  // Le lien doit ouvrir le mois qu'on vient de déposer, pas le plus récent
+  // de la base : après un chargement d'archives, ce n'est jamais le même.
+  const cible = "{restaurant_id:" + E.depot.restaurant_id +
+    ",mois:'" + E.depot.mois + "-01'}";
+  const p = ['<a href="#" onclick="aller(\'analyse\',' + cible + ');return false">' +
+    'Voir l\'analyse de ' + moisLisible(E.depot.mois + "-01") +
     (E.bilan.ecarts ? " · " + E.bilan.ecarts + " écart(s) détecté(s)" : "") + '</a>'];
   if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'libelles\');return false">' +
     E.bilan.qualif + ' remise(s) à qualifier</a>');
