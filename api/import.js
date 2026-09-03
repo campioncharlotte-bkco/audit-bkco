@@ -39,10 +39,24 @@ function lireJeton(j) {
         return d.exp > Date.now() ? d : null; } catch { return null; }
 }
 
+// PostgREST refuse un lot dont les objets n'ont pas exactement les mêmes
+// clés, et JSON.stringify supprime les clés valant undefined. On aligne
+// donc toutes les lignes sur l'union des colonnes rencontrées.
+function homogeneiser(lignes) {
+  const colonnes = new Set();
+  lignes.forEach(l => Object.keys(l).forEach(k => { if (l[k] !== undefined) colonnes.add(k); }));
+  return lignes.map(l => {
+    const o = {};
+    colonnes.forEach(k => o[k] = (l[k] === undefined ? null : l[k]));
+    return o;
+  });
+}
+
 const parLots = async (table, lignes, taille = 500) => {
-  for (let i = 0; i < lignes.length; i += taille)
+  const plates = homogeneiser(lignes);
+  for (let i = 0; i < plates.length; i += taille)
     await sb(table, { method: "POST", prefer: "return=minimal",
-                      body: JSON.stringify(lignes.slice(i, i + taille)) });
+                      body: JSON.stringify(plates.slice(i, i + taille)) });
 };
 const jours = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n);
                           return x.toISOString().slice(0, 10); };
@@ -111,17 +125,28 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
 
   // Les flux caissiers (1) et (2) alimentent la même ligne : (1) apporte
   // corrections/annulations/diff. de caisse, (2) les modes de paiement.
-  if (p.fusion) {
-    for (const l of lignes) {
-      const mois = debut.slice(0, 8) + "01";
-      await sb("flux_caissiers?on_conflict=restaurant_id,mois,badge_code",
-        { method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-          body: JSON.stringify([{ ...l, mois }]) });
+  const mois = debut.slice(0, 8) + "01";
+
+  if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
+    // les rapports cumulés se terminent par une ligne de totaux, sans badge
+    const utiles = lignes.filter(l => l.badge_code && String(l.badge_code).trim());
+    const cible = `${p.table}?on_conflict=restaurant_id,mois,badge_code`;
+    const entete = { prefer: "resolution=merge-duplicates,return=minimal" };
+    if (p.fusion) {
+      // le rapport (2) complète la ligne créée par le (1) : envoi ligne à
+      // ligne pour ne pas écraser les colonnes que lui seul renseigne
+      for (const l of utiles)
+        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([{ ...l, mois }]) });
+    } else {
+      for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
+        await sb(cible, { ...entete, method: "POST", body: JSON.stringify([l]) });
     }
-  } else if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
-    const mois = debut.slice(0, 8) + "01";
-    await parLots(`${p.table}?on_conflict=restaurant_id,mois,badge_code`,
-      lignes.map(l => ({ ...l, mois })));
+  } else if (p.table === "flux_responsables") {
+    const utiles = lignes.filter(l => l.responsable && String(l.responsable).trim());
+    for (const l of homogeneiser(utiles.map(x => ({ ...x, mois }))))
+      await sb("flux_responsables?on_conflict=restaurant_id,mois,responsable",
+        { method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+          body: JSON.stringify([l]) });
   } else {
     await parLots(p.table, lignes);
   }
