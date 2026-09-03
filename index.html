@@ -557,78 +557,248 @@ function annoncer(aQualifier) {
 
 /* ---------- remises ---------- */
 
-async function vueLibelles() {
-  const d = await api("audit", "libellesAQualifier");
+/* Une qualification n'est pas définitive : on se trompe, et un libellé
+   change de sens d'une opération commerciale à l'autre. Les quatre états
+   sont donc navigables et modifiables à tout moment. */
+
+const ETATS_REMISE = [
+  ["A_QUALIFIER", "À qualifier"],
+  ["AUTORISE", "Normales"],
+  ["OPERATION", "Opérations"],
+  ["NON_AUTORISE", "Non autorisées"]
+];
+const MOT_ETAT = { A_QUALIFIER:"à qualifier", AUTORISE:"normale",
+                   OPERATION:"opération commerciale", NON_AUTORISE:"non autorisée" };
+
+async function vueLibelles(params) {
+  const statut = (params && params.statut) || (E.rem && E.rem.statut) || "A_QUALIFIER";
+  E.rem = { statut: statut };
+  const d = await api("audit", "libelles", { statut: statut });
+  const c = d.compte || {};
+
+  const onglets = '<div class="actions" style="margin:0 0 16px">' +
+    ETATS_REMISE.map(function(o){
+      return '<button' + (statut === o[0] ? ' class="fort"' : '') +
+        ' onclick="aller(\'libelles\',{statut:\'' + o[0] + '\'})">' + o[1] +
+        ' <span style="opacity:.7">' + (c[o[0]] || 0) + '</span></button>';
+    }).join("") + '</div>';
+
+  if (!d.libelles.length) {
+    $("#vue").innerHTML = '<h2>Remises</h2>' +
+      '<p class="sous">Chaque libellé de remise rencontré dans les exports est classé ici. ' +
+        'Vous pouvez revenir sur un classement à tout moment.</p>' + onglets +
+      '<div class="bloc"><div class="vide"><b>Aucun libellé dans cet état</b>' +
+      'Changez d\'onglet pour voir les autres.</div></div>';
+    return;
+  }
+
   const familles = {};
   d.libelles.forEach(function(l){
     const f = l.famille || "SANS FAMILLE";
     (familles[f] = familles[f] || []).push(l);
   });
-  const noms = Object.keys(familles).sort(function(a,b){ return familles[b].length - familles[a].length; });
+  const noms = Object.keys(familles).sort(function(a,b){
+    return familles[b].length - familles[a].length; });
 
   $("#vue").innerHTML =
-    '<h2>Remises à qualifier</h2>' +
-    '<p class="sous">Chaque libellé rencontré pour la première fois s\'affiche ici. ' +
-      'Qualifiez une famille entière en un clic ; descendez au libellé pour le ' +
-      'paramétrage local, seul endroit où une remise peut avoir été créée dans le restaurant.</p>' +
-    (noms.length ? noms.map(function(f){
+    '<h2>Remises</h2>' +
+    '<p class="sous">Chaque libellé de remise rencontré dans les exports est classé ici. ' +
+      'Qualifiez une famille entière en un clic, ou descendez au libellé. ' +
+      'Un classement se corrige à tout moment.</p>' + onglets +
+    noms.map(function(f){
       const l = familles[f], ids = l.map(x => x.id).join(",");
       const cle = "g" + f.replace(/[^a-zA-Z0-9]/g,"");
       return '<div class="bloc"><div class="ligne"><div class="corps">' +
-        '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length + ' libellé(s)</span></div>' +
+        '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length +
+          ' libellé(s)</span></div>' +
         '<div class="detail">' + esc(l.slice(0,3).map(x => x.libelle).join(" · ")) +
         (l.length > 3 ? " · et " + (l.length - 3) + " autre(s)" : "") + '</div>' +
         '<div class="actions">' +
-        '<button onclick="qualifierLot([' + ids + '],\'AUTORISE\',0)">Toute la famille est normale</button>' +
-        '<button onclick="qualifierLot([' + ids + '],\'OPERATION\',1)">Opération commerciale</button>' +
+        boutonsRemise(ids, statut) +
         '<button onclick="basculer(\'' + cle + '\')">Voir le détail</button>' +
         '</div></div></div>' +
         '<div id="' + cle + '" style="display:none">' +
         l.map(function(x){
-          return '<div class="ligne"><div class="corps"><div class="titre">' + esc(x.libelle) + '</div>' +
-            '<div class="detail">Vu du ' + jour(x.premiere_vue) + ' au ' + jour(x.derniere_vue) + '</div>' +
-            '<div class="actions">' +
-            '<button onclick="qualifierLot([' + x.id + '],\'AUTORISE\',0)">Normale</button>' +
-            '<button onclick="qualifierLot([' + x.id + '],\'OPERATION\',1)">Opération</button>' +
-            '<button onclick="qualifierLot([' + x.id + '],\'NON_AUTORISE\',0)">Non autorisée</button>' +
+          return '<div class="ligne"><div class="corps"><div class="titre">' +
+            esc(x.libelle) + '</div>' +
+            '<div class="detail">Vu du ' + jour(x.premiere_vue) + ' au ' + jour(x.derniere_vue) +
+              ' · actuellement ' + MOT_ETAT[x.statut] +
+              (x.neutralise_ratio ? ' · exclue des ratios' : '') + '</div>' +
+            '<div class="actions">' + boutonsRemise(String(x.id), x.statut) +
             '</div></div></div>';
         }).join("") + '</div></div>';
-    }).join("")
-    : '<div class="bloc"><div class="vide"><b>Tout est qualifié</b>' +
-      'Aucune nouvelle remise depuis le dernier dépôt.</div></div>');
+    }).join("");
+}
+
+/* On n'affiche jamais le bouton de l'état courant : cliquer sur « Normale »
+   un libellé déjà normal ne fait rien et laisse croire à un bug. */
+function boutonsRemise(ids, statutActuel) {
+  const b = [];
+  if (statutActuel !== "AUTORISE")
+    b.push('<button onclick="qualifierLot([' + ids + '],\'AUTORISE\',0)">Normale</button>');
+  if (statutActuel !== "OPERATION")
+    b.push('<button onclick="qualifierLot([' + ids + '],\'OPERATION\',1)">Opération commerciale</button>');
+  if (statutActuel !== "NON_AUTORISE")
+    b.push('<button onclick="qualifierLot([' + ids + '],\'NON_AUTORISE\',0)">Non autorisée</button>');
+  if (statutActuel !== "A_QUALIFIER")
+    b.push('<button onclick="qualifierLot([' + ids + '],\'A_QUALIFIER\',0)">Remettre à qualifier</button>');
+  return b.join("");
 }
 
 async function qualifierLot(ids, statut, neutralise) {
   for (const id of ids)
     await api("audit", "qualifierLibelle", { id:id, statut:statut, neutralise:neutralise });
-  aller("libelles");
+  aller("libelles", { statut: E.rem.statut });
 }
 
 /* ---------- équipe ---------- */
 
+/* Le pivot de tout le dispositif. Sans correspondance badge → nom, les
+   écarts restent des trigrammes et personne ne peut les traiter. L'écran
+   doit donc être modifiable, et signaler les badges vus dans les données
+   qui n'ont jamais été enregistrés. */
+
+const FONCTIONS = ["EQUIPIER","LEADER","SHIFT_LEADER","MANAGER","DIRECTEUR"];
+const POSTES = ["DRIVE","BORNE","COMPTOIR","MIXTE"];
+
+// Règle de construction des badges Cash Système : 4 lettres du nom + 3 du
+// prénom. BAUDRY Laurence donne BAUDLAU. C'est une proposition, pas une
+// déduction : le directeur valide.
+function badgeProbable(nomComplet) {
+  const t = String(nomComplet || "").trim().split(/\s+/);
+  if (t.length < 2) return "";
+  return (t[0].slice(0,4) + t[1].slice(0,3)).toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 async function vueEquipe(params) {
   const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
-  const id = (params && params.restaurant_id) || (restos[0] && restos[0].id);
-  if (!id) { $("#vue").innerHTML = '<div class="vide"><b>Aucun restaurant</b></div>'; return; }
-  const d = await api("audit", "salaries", { restaurant_id:id });
+  const rid = (params && params.restaurant_id) || (E.eq && E.eq.restaurant_id)
+    || (restos[0] && restos[0].id);
+  if (!rid) { $("#vue").innerHTML = '<div class="vide"><b>Aucun restaurant</b></div>'; return; }
+  E.eq = { restaurant_id: rid };
+  const d = await api("audit", "salaries", { restaurant_id: rid });
+  E.salaries = d.salaries;
+
+  const aValider = d.salaries.filter(s => s.confiance_mapping !== "VALIDE").length;
+
   $("#vue").innerHTML =
     '<h2>Équipe</h2>' +
-    '<p class="sous">Le poste habituel sert à interpréter le taux d\'espèces : un poste au drive ' +
-      'encaisse naturellement moins d\'espèces qu\'une borne.</p>' +
+    '<p class="sous">C\'est ici que les badges de caisse deviennent des noms. ' +
+      'Tant qu\'un badge n\'est pas renseigné, ses écarts restent illisibles dans l\'analyse.</p>' +
     '<label class="champ"><span>Restaurant</span>' +
       '<select onchange="aller(\'equipe\',{restaurant_id:Number(this.value)})">' +
-      restos.map(r => '<option value="' + r.id + '"' + (r.id === id ? " selected" : "") + '>' +
+      restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") + '>' +
         esc(r.nom) + '</option>').join("") + '</select></label>' +
-    '<div class="bloc">' + (d.salaries.length ? d.salaries.map(function(s){
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(s.badge_code) +
-        (s.nom_complet ? " · " + esc(s.nom_complet) : "") + '</div><div class="detail">' +
-        esc(s.fonction || "fonction à préciser") + ' · ' +
-        esc(s.poste_habituel || "poste à préciser") + '</div></div>' +
-        (s.confiance_mapping === "VALIDE" ? '<span class="etiquette ok">validé</span>'
-                                          : '<span class="etiquette urgent">à valider</span>') +
-        '</div>';
-    }).join("") : '<div class="vide"><b>Aucun salarié</b>' +
-      'Les badges apparaîtront après le premier dépôt.</div>') + '</div>';
+
+    (d.inconnus.length ? '<div class="bloc">' +
+      '<div class="explication">' + d.inconnus.length + ' badge(s) apparaissent dans vos ' +
+        'exports sans être enregistrés ici. Cliquez pour les compléter.</div>' +
+      d.inconnus.map(function(b){
+        return '<button class="ligne" onclick="formulaireSalarie(null,\'' + b + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(b) + '</div>' +
+          '<div class="detail">vu dans les données, jamais enregistré</div></div>' +
+          '<span class="etiquette urgent">à compléter</span></button>';
+      }).join("") + '</div>' : "") +
+
+    '<div class="bloc">' +
+      (aValider ? '<div class="explication">' + aValider + ' fiche(s) reposent sur une ' +
+        'correspondance proposée automatiquement. Vérifiez le nom avant de valider : ' +
+        'un badge attribué à la mauvaise personne fausse toute l\'analyse.</div>' : "") +
+      (d.salaries.length ? d.salaries.map(function(s){
+        return '<button class="ligne" onclick="formulaireSalarie(' + s.id + ')">' +
+          '<div class="corps"><div class="titre">' + esc(s.badge_code) +
+            (s.nom_complet ? " · " + esc(s.nom_complet) : "") + '</div><div class="detail">' +
+            esc(s.fonction || "fonction à préciser") + ' · ' +
+            esc(s.poste_habituel || "poste à préciser") + '</div></div>' +
+          (s.confiance_mapping === "VALIDE" ? '<span class="etiquette ok">validé</span>'
+                                            : '<span class="etiquette urgent">à valider</span>') +
+          '</button>';
+      }).join("") : '<div class="vide"><b>Aucun salarié</b>' +
+        'Les badges apparaîtront après le premier dépôt.</div>') +
+    '</div>' +
+    '<div class="actions"><button class="fort" onclick="formulaireSalarie(null)">' +
+      'Ajouter une personne</button></div>' +
+    '<div id="formulaire"></div>';
+}
+
+function formulaireSalarie(id, badgePropose) {
+  const s = id ? (E.salaries.find(x => x.id === id) || {}) : {};
+  const badge = badgePropose || s.badge_code || "";
+  const z = document.getElementById("formulaire");
+  z.innerHTML =
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">' +
+        (id ? "Modifier " + esc(badge) : badgePropose ? "Compléter " + esc(badgePropose)
+                                                      : "Ajouter une personne") + '</h3>' +
+      '<label class="champ"><span>Nom et prénom</span>' +
+        '<input id="s-nom" value="' + esc(s.nom_complet || "") + '" ' +
+        'oninput="proposerBadge()" placeholder="BAUDRY Laurence"></label>' +
+      '<label class="champ"><span>Badge en caisse</span>' +
+        '<input id="s-badge" value="' + esc(badge) + '" placeholder="BAUDLAU"></label>' +
+      '<p class="sous" id="s-aide" style="margin:-8px 0 14px;font-size:12.5px"></p>' +
+      '<label class="champ"><span>Fonction</span><select id="s-fonction">' +
+        '<option value="">à préciser</option>' +
+        FONCTIONS.map(f => '<option value="' + f + '"' +
+          (s.fonction === f ? " selected" : "") + '>' + f.replace("_", " ") + '</option>').join("") +
+        '</select></label>' +
+      '<label class="champ"><span>Poste habituel</span><select id="s-poste">' +
+        '<option value="">à préciser</option>' +
+        POSTES.map(p => '<option value="' + p + '"' +
+          (s.poste_habituel === p ? " selected" : "") + '>' + p + '</option>').join("") +
+        '</select></label>' +
+      '<label class="champ"><span>Date de prise de poste (facultatif)</span>' +
+        '<input id="s-date" type="date" value="' + esc(s.date_prise_poste || "") + '"></label>' +
+      '<p class="sous" style="font-size:12.5px;margin-bottom:14px">Un changement de poste remet ' +
+        'la comparaison à zéro : le taux d\'espèces d\'un caissier passé du drive à la borne ' +
+        'bouge pour une raison parfaitement légitime.</p>' +
+      '<div id="err-salarie"></div>' +
+      '<div class="actions" style="margin-top:0">' +
+        '<button class="fort" onclick="enregistrerSalarie(' + (id || "null") + ')">' +
+          'Enregistrer et valider</button>' +
+        '<button onclick="document.getElementById(\'formulaire\').innerHTML=\'\'">Annuler</button>' +
+        (id ? '<button style="color:var(--rouge)" onclick="supprimerSalarie(' + id + ')">' +
+          'Supprimer</button>' : "") +
+      '</div>' +
+    '</div></div>';
+  z.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  proposerBadge();
+}
+
+function proposerBadge() {
+  const nom = ($("#s-nom") || {}).value || "";
+  const champ = $("#s-badge"), aide = $("#s-aide");
+  if (!champ || !aide) return;
+  const propose = badgeProbable(nom);
+  if (propose && !champ.value) champ.value = propose;
+  aide.textContent = propose && champ.value !== propose
+    ? "Le badge attendu pour ce nom serait " + propose + ". Vérifiez avant d'enregistrer."
+    : propose ? "Badge construit sur 4 lettres du nom + 3 du prénom." : "";
+}
+
+async function enregistrerSalarie(id) {
+  const badge = $("#s-badge").value.trim().toUpperCase();
+  const nom = $("#s-nom").value.trim();
+  if (!badge) { $("#err-salarie").innerHTML =
+    '<div class="alerte erreur">Le badge est obligatoire.</div>'; return; }
+  try {
+    await api("audit", "majSalarie", { id: id || undefined,
+      restaurant_id: E.eq.restaurant_id, badge_code: badge, nom_complet: nom || null,
+      fonction: $("#s-fonction").value || null, poste_habituel: $("#s-poste").value || null,
+      date_prise_poste: $("#s-date").value || null });
+    aller("equipe", { restaurant_id: E.eq.restaurant_id });
+  } catch (e) {
+    $("#err-salarie").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
+}
+
+async function supprimerSalarie(id) {
+  try {
+    await api("audit", "supprimerSalarie", { id: id, restaurant_id: E.eq.restaurant_id });
+    aller("equipe", { restaurant_id: E.eq.restaurant_id });
+  } catch (e) {
+    $("#err-salarie").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
 }
 
 /* ---------- accès ---------- */
