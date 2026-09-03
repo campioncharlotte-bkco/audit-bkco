@@ -180,8 +180,8 @@ async function demarrer() {
   $("#connexion").style.display = "none";
   $("#app").style.display = "block";
   $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [["anomalies","À vérifier","!"],["depot","Dépôt","+"],
-                   ["libelles","Remises","%"],["equipe","Équipe","•"]];
+  const onglets = [["anomalies","À vérifier","!"],["encadrants","Encadrants","▲"],
+                   ["depot","Dépôt","+"],["libelles","Remises","%"],["equipe","Équipe","•"]];
   if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
   $("#nav").innerHTML = onglets.map(function(o){
     return '<button data-onglet="'+o[0]+'" onclick="aller(\''+o[0]+'\')"><b>'+o[2]+'</b>'+o[1]+'</button>';
@@ -197,8 +197,8 @@ function aller(onglet, params) {
   document.querySelectorAll("#nav button").forEach(function(b){
     b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
   $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
-  ({ anomalies:vueAnomalies, depot:vueDepot, libelles:vueLibelles,
-     equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
+  ({ anomalies:vueAnomalies, encadrants:vueEncadrants, depot:vueDepot,
+     libelles:vueLibelles, equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
 }
 const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
 const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
@@ -388,6 +388,64 @@ async function majAnomalie(id, statut) {
   await api("audit", "majAnomalie", { id:id, statut:statut, commentaire:c,
     type: statut ? "EXPLICATION" : "COMMENTAIRE" });
   aller("anomalies");
+}
+
+/* ---------- encadrants ---------- */
+
+/* Comparer des montants bruts n'a pas de sens : celui qui valide 180
+   caisses accumule plus d'écarts que celui qui en valide 40. On classe
+   donc sur l'écart moyen par session, et on affiche la part de sessions
+   déficitaires, qui ne dépend ni du volume ni des montants. */
+async function vueEncadrants(params) {
+  const d = await api("audit", "encadrants", params || {});
+  if (!d.encadrants.length) { $("#vue").innerHTML =
+    '<div class="vide"><b>Aucune donnée</b>Déposez les déclarations de caisse ' +
+    'pour voir les encadrants.</div>'; return; }
+
+  $("#vue").innerHTML =
+    '<h2>Encadrants</h2>' +
+    '<p class="sous">Qui valide les comptages de caisse, et avec quel résultat. ' +
+      'Le classement se fait sur l\'écart moyen par session : comparer les montants ' +
+      'bruts avantagerait ceux qui valident le moins de caisses.</p>' +
+    (d.mois_disponibles.length > 1 ? '<label class="champ"><span>Mois</span>' +
+      '<select onchange="aller(\'encadrants\',{mois:this.value})">' +
+      d.mois_disponibles.map(m => '<option value="' + m + '"' +
+        (m === d.mois ? " selected" : "") + '>' +
+        MOIS_FR[Number(m.slice(5,7)) - 1] + " " + m.slice(0,4) + '</option>').join("") +
+      '</select></label>' : '') +
+    d.encadrants.map(ligneEncadrant).join("");
+}
+
+function ligneEncadrant(e) {
+  const id = "e" + String(e.responsable).replace(/[^A-Za-z0-9]/g, "");
+  const part = Number(e.part_deficit) || 0;
+  const teinte = part >= 55 ? "expire" : part >= 45 ? "urgent" : "ok";
+  const hist = (e.historique || []).map(function(h){
+    return '<div class="ligne" style="padding-left:26px">' +
+      '<div class="corps"><div class="titre" style="font-weight:500">' +
+        MOIS_FR[Number(h.mois.slice(5,7)) - 1] + " " + h.mois.slice(0,4) + '</div>' +
+      '<div class="detail">' + h.sessions + ' caisses validées, dont ' +
+        h.sessions_tardives + ' après 22 h · ' + h.sessions_deficit + ' avec un manquant</div></div>' +
+      '<div style="text-align:right"><div class="montant num negatif">' +
+        eur(h.ecart_par_session) + '</div>' +
+      '<div class="detail">par caisse</div></div></div>';
+  }).join("");
+
+  return '<div class="bloc">' +
+    '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
+      '<div class="corps"><div class="titre">' + esc(e.responsable) +
+        ' <span class="etiquette ' + teinte + '">' + part + ' % de caisses en manque</span></div>' +
+      '<div class="detail">' + e.sessions + ' caisses validées ce mois-ci · ' +
+        'manquant total ' + eur(e.ecart_total) +
+        (e.ecarts ? ' · ' + e.ecarts.ecarts + ' écart(s) ouvert(s) sur ' +
+                    e.ecarts.jours + ' jour(s)' : '') + '</div></div>' +
+      '<div style="text-align:right"><div class="montant num negatif">' +
+        eur(e.ecart_par_session) + '</div><div class="detail">par caisse</div></div>' +
+    '</button>' +
+    '<div id="' + id + '" style="display:none">' +
+      '<div class="explication">Chaque ligne est un mois. Un écart moyen qui se maintient ' +
+        'ou s\'aggrave d\'un mois sur l\'autre compte davantage qu\'un mauvais mois isolé.</div>' +
+      hist + '</div></div>';
 }
 
 /* ---------- dépôt ---------- */
