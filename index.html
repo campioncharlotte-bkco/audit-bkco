@@ -248,12 +248,14 @@ async function vueAnomalies(params) {
   const axe = (params && params.axe) || E.axe || "manager";
   E.axe = axe;
   const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
+  E.noms = d.noms || {};
   const groupes = {};
   d.anomalies.forEach(function(a){
     const k = (axe === "manager" ? a.manager_code : a.badge_code) || "—";
-    if (!groupes[k]) groupes[k] = { qui:k, liste:[], cumul:0, urgence:null, jours:{} };
+    if (!groupes[k]) groupes[k] = { qui:k, liste:[], cumul:0, urgence:null, jours:{}, fermetures:0 };
     const g = groupes[k];
     g.liste.push(a);
+    if (a.shift === "FERMETURE") g.fermetures++;
     g.cumul += Math.abs(Number(a.montant_ttc) || 0);
     g.jours[String(a.periode_debut).slice(0,10)] = 1;
     const r = resteCamera(a.echeance_camera);
@@ -298,12 +300,13 @@ function blocPersonne(g, axe) {
     '<span class="etiquette">' + g.urgence + ' j</span>';
   const titre = g.qui === "—"
     ? (axe === "manager" ? "Sans responsable identifié" : "Sans équipier identifié")
-    : esc(g.qui);
+    : esc((E.noms && E.noms[g.qui]) || g.qui);
 
   return '<div class="bloc">' +
     '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
       '<div class="corps"><div class="titre">' + titre + '</div>' +
-      '<div class="detail">' + esc(resume) + ' · sur ' + nbJours + ' jour(s)</div></div>' +
+      '<div class="detail">' + esc(resume) + ' · sur ' + nbJours + ' jour(s)' +
+        (g.fermetures ? ' · dont ' + g.fermetures + ' en fermeture' : '') + '</div></div>' +
       '<div style="text-align:right"><div class="montant num">' + eur(g.cumul) + '</div>' +
       '<div style="margin-top:4px">' + urg + '</div></div>' +
     '</button>' +
@@ -316,7 +319,8 @@ function blocPersonne(g, axe) {
                 'onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
                 '<div class="corps"><div class="titre" style="font-weight:500">' +
                   jour(a.periode_debut) + ' · ' + esc(nomCourt(t, 1)) + '</div>' +
-                '<div class="detail">' + esc(nomResto(a.restaurant_id)) +
+                '<div class="detail">' + esc(momentLisible(a.shift)) +
+                  esc(nomResto(a.restaurant_id)) +
                   (axe === "manager" && a.badge_code ? " · caisse de " + esc(a.badge_code) : "") +
                   (axe === "equipier" && a.manager_code ? " · validé par " + esc(a.manager_code) : "") +
                   '</div></div>' +
@@ -325,6 +329,10 @@ function blocPersonne(g, axe) {
             }).join("");
       }).join("") +
     '</div></div>';
+}
+
+function momentLisible(s) {
+  return { OUVERTURE:"ouverture · ", JOURNEE:"journée · ", FERMETURE:"fermeture · " }[s] || "";
 }
 
 function nomCourt(regle, n) {
@@ -425,7 +433,9 @@ function ligneEncadrant(e) {
       '<div class="corps"><div class="titre" style="font-weight:500">' +
         MOIS_FR[Number(h.mois.slice(5,7)) - 1] + " " + h.mois.slice(0,4) + '</div>' +
       '<div class="detail">' + h.sessions + ' caisses validées, dont ' +
-        h.sessions_tardives + ' après 22 h · ' + h.sessions_deficit + ' avec un manquant</div></div>' +
+        h.sessions_fermeture + ' en fermeture · ' + h.sessions_deficit + ' avec un manquant' +
+        (Number(h.ecart_fermeture) ? ' · ' + eur(h.ecart_fermeture) + ' manquant en fermeture' : '') +
+        '</div></div>' +
       '<div style="text-align:right"><div class="montant num negatif">' +
         eur(h.ecart_par_session) + '</div>' +
       '<div class="detail">par caisse</div></div></div>';
@@ -433,7 +443,7 @@ function ligneEncadrant(e) {
 
   return '<div class="bloc">' +
     '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
-      '<div class="corps"><div class="titre">' + esc(e.responsable) +
+      '<div class="corps"><div class="titre">' + esc(e.nom_affiche || e.responsable) +
         ' <span class="etiquette ' + teinte + '">' + part + ' % de caisses en manque</span></div>' +
       '<div class="detail">' + e.sessions + ' caisses validées ce mois-ci · ' +
         'manquant total ' + eur(e.ecart_total) +
