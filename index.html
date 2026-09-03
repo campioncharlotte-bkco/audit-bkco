@@ -225,30 +225,93 @@ function libelleRegle(a) {
   }[r] || r || "Écart";
 }
 
+/* Regroupé par personne : ce qu'on cherche, ce n'est pas un écart isolé
+   mais un badge qui revient d'une semaine sur l'autre. */
 async function vueAnomalies() {
   const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
-  const lignes = d.anomalies.map(function(a){
-    const reste = resteCamera(a.echeance_camera);
-    const badge = reste === null ? "" :
-      reste < 0 ? '<span class="etiquette expire">images perdues</span>' :
-      reste <= 4 ? '<span class="etiquette urgent">' + reste + ' j pour la caméra</span>' :
-      '<span class="etiquette">' + reste + ' j</span>';
-    return '<button class="ligne" onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
-      '<div class="corps"><div class="titre">' + esc(libelleRegle(a)) + '</div>' +
-      '<div class="detail">' + esc(nomResto(a.restaurant_id)) + ' · ' + jour(a.periode_debut) +
-      (a.badge_code ? ' · ' + esc(a.badge_code) : '') + '</div></div>' +
-      '<div style="text-align:right"><div class="montant num ' +
-      (a.montant_ttc < 0 ? "negatif" : "") + '">' + eur(a.montant_ttc) + '</div>' +
-      '<div style="margin-top:4px">' + badge + '</div></div></button>';
-  }).join("");
+  E.anomalies = d.anomalies;
+  const groupes = {};
+  d.anomalies.forEach(function(a){
+    const k = a.badge_code || "—";
+    if (!groupes[k]) groupes[k] = { badge:k, liste:[], cumul:0, urgence:null };
+    const g = groupes[k];
+    g.liste.push(a);
+    g.cumul += Math.abs(Number(a.montant_ttc) || 0);
+    const r = resteCamera(a.echeance_camera);
+    if (r !== null && (g.urgence === null || r < g.urgence)) g.urgence = r;
+  });
+  const cles = Object.keys(groupes).sort(function(x,y){
+    if (x === "—") return 1; if (y === "—") return -1;
+    return groupes[y].liste.length - groupes[x].liste.length
+        || groupes[y].cumul - groupes[x].cumul;
+  });
+
   $("#vue").innerHTML =
     '<h2>À vérifier</h2>' +
-    '<p class="sous">' + d.anomalies.length + ' écart(s) à expliquer, les plus urgents d\'abord : ' +
-    'les images de vidéosurveillance ne sont gardées que 14 jours.</p>' +
+    '<p class="sous">' + d.anomalies.length + ' écart(s) répartis sur ' + cles.length +
+      ' personne(s). Ceux qui reviennent le plus souvent sont en haut.</p>' +
     (d.masquees ? '<div class="alerte info">' + d.masquees +
       ' élément(s) vous concernant sont traités par votre hiérarchie.</div>' : '') +
-    '<div class="bloc">' + (lignes || '<div class="vide"><b>Rien à vérifier</b>' +
-      'Déposez les exports de la période pour lancer une analyse.</div>') + '</div>';
+    (cles.length ? cles.map(function(k){ return blocPersonne(groupes[k]); }).join("")
+      : '<div class="bloc"><div class="vide"><b>Rien à vérifier</b>' +
+        'Déposez les exports de la période pour lancer une analyse.</div></div>');
+}
+
+function blocPersonne(g) {
+  const id = "p" + g.badge.replace(/[^A-Za-z0-9]/g, "") || "psans";
+  // ce qui compte est le motif qui se répète, pas le détail de chaque ligne
+  const parType = {};
+  g.liste.forEach(function(a){
+    const t = (a.regles_declenchees || [])[0] || "AUTRE";
+    parType[t] = (parType[t] || 0) + 1;
+  });
+  const resume = Object.keys(parType).map(function(t){
+    return parType[t] + " " + nomCourt(t, parType[t]); }).join(" · ");
+  const urg = g.urgence === null ? "" :
+    g.urgence < 0 ? '<span class="etiquette expire">images perdues</span>' :
+    g.urgence <= 4 ? '<span class="etiquette urgent">' + g.urgence + ' j pour la caméra</span>' :
+    '<span class="etiquette">' + g.urgence + ' j</span>';
+
+  return '<div class="bloc">' +
+    '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
+      '<div class="corps">' +
+        '<div class="titre">' + (g.badge === "—" ? "Écarts sans badge identifié" : esc(g.badge)) + '</div>' +
+        '<div class="detail">' + esc(resume) + '</div>' +
+      '</div>' +
+      '<div style="text-align:right">' +
+        '<div class="montant num">' + eur(g.cumul) + '</div>' +
+        '<div style="margin-top:4px">' + urg + '</div>' +
+      '</div>' +
+    '</button>' +
+    '<div id="' + id + '" style="display:none">' +
+      g.liste.map(function(a){
+        const r = resteCamera(a.echeance_camera);
+        return '<button class="ligne" style="padding-left:26px" ' +
+          'onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
+          '<div class="corps"><div class="titre" style="font-weight:500">' +
+            esc(libelleRegle(a)) + '</div>' +
+          '<div class="detail">' + jour(a.periode_debut) + ' · ' +
+            esc(nomResto(a.restaurant_id)) + '</div></div>' +
+          '<div class="montant num ' + (a.montant_ttc < 0 ? "negatif" : "") + '">' +
+            eur(a.montant_ttc) + '</div></button>';
+      }).join("") +
+    '</div></div>';
+}
+
+function nomCourt(regle, n) {
+  const p = n > 1 ? "s" : "";
+  return {
+    SESSION_ECART_ESPECES: "manquant" + p + " en caisse",
+    SESSION_ECART_TARDIF: "manquant" + p + " en fin de service",
+    ANNUL_DELAI: "annulation" + p + " tardive" + p,
+    REMISE_LIBELLE_INCONNU: "remise" + p + " non répertoriée" + p,
+    REMISE_LIBELLE_INTERDIT: "remise" + p + " non autorisée" + p,
+    CO_HORS_RUSH: "journée" + p + " à commandes ouvertes tardives",
+    CO_AUTO_DOMINANT: "journée" + p + " sans traçabilité",
+    RATIO_HORS_SEUIL: "ratio" + p + " au-dessus du réseau",
+    TEND_EN_HAUSSE: "ratio" + p + " en progression",
+    TEND_STABLE_HAUT: "ratio" + p + " durablement élevé"
+  }[regle] || "écart" + p;
 }
 
 async function ouvrirAnomalie(id) {
@@ -441,26 +504,58 @@ function annoncer(ecarts, aQualifier) {
 
 /* ---------- remises ---------- */
 
+/* Une centaine de libellés par mois, presque tous nationaux : on
+   qualifie par famille, et on ne descend au libellé que pour le
+   paramétrage local, seul endroit où un libellé peut avoir été créé
+   dans le restaurant. */
 async function vueLibelles() {
   const d = await api("audit", "libellesAQualifier");
+  const familles = {};
+  d.libelles.forEach(function(l){
+    const f = l.famille || "SANS FAMILLE";
+    (familles[f] = familles[f] || []).push(l);
+  });
+  const noms = Object.keys(familles).sort(function(a,b){ return familles[b].length - familles[a].length; });
+
   $("#vue").innerHTML =
     '<h2>Remises à qualifier</h2>' +
     '<p class="sous">Chaque libellé rencontré pour la première fois s\'affiche ici. ' +
-      'Tant qu\'il n\'est pas qualifié, ses remises remontent comme écarts.</p>' +
-    '<div class="bloc">' + (d.libelles.length ? d.libelles.map(function(l){
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(l.libelle) + '</div>' +
-        '<div class="detail">Vu du ' + jour(l.premiere_vue) + ' au ' + jour(l.derniere_vue) + '</div>' +
+      'Qualifiez une famille entière en un clic ; descendez au libellé pour le ' +
+      'paramétrage local, seul endroit où une remise peut avoir été créée dans le restaurant.</p>' +
+    (noms.length ? noms.map(function(f){
+      const l = familles[f], ids = l.map(x => x.id).join(",");
+      return '<div class="bloc"><div class="ligne"><div class="corps">' +
+        '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length + ' libellé(s)</span></div>' +
+        '<div class="detail">' + esc(l.slice(0,3).map(x => x.libelle).join(" · ")) +
+        (l.length > 3 ? " · et " + (l.length - 3) + " autre(s)" : "") + '</div>' +
         '<div class="actions">' +
-        '<button onclick="qualifier(' + l.id + ',\'AUTORISE\',0)">Remise normale</button>' +
-        '<button onclick="qualifier(' + l.id + ',\'OPERATION\',1)">Opération commerciale</button>' +
-        '<button onclick="qualifier(' + l.id + ',\'NON_AUTORISE\',0)">Non autorisée</button>' +
-        '</div></div></div>';
-    }).join("") : '<div class="vide"><b>Tout est qualifié</b>' +
-      'Aucune nouvelle remise depuis le dernier dépôt.</div>') + '</div>';
+        '<button onclick="qualifierLot([' + ids + '],\'AUTORISE\',0)">Toute la famille est normale</button>' +
+        '<button onclick="qualifierLot([' + ids + '],\'OPERATION\',1)">Opération commerciale</button>' +
+        '<button onclick="basculer(\'g' + esc(f).replace(/[^a-zA-Z]/g,"") + '\')">Voir le détail</button>' +
+        '</div></div></div>' +
+        '<div id="g' + esc(f).replace(/[^a-zA-Z]/g,"") + '" style="display:none">' +
+        l.map(function(x){
+          return '<div class="ligne"><div class="corps"><div class="titre">' + esc(x.libelle) + '</div>' +
+            '<div class="detail">Vu du ' + jour(x.premiere_vue) + ' au ' + jour(x.derniere_vue) + '</div>' +
+            '<div class="actions">' +
+            '<button onclick="qualifierLot([' + x.id + '],\'AUTORISE\',0)">Normale</button>' +
+            '<button onclick="qualifierLot([' + x.id + '],\'OPERATION\',1)">Opération</button>' +
+            '<button onclick="qualifierLot([' + x.id + '],\'NON_AUTORISE\',0)">Non autorisée</button>' +
+            '</div></div></div>';
+        }).join("") + '</div></div>';
+    }).join("")
+    : '<div class="bloc"><div class="vide"><b>Tout est qualifié</b>' +
+      'Aucune nouvelle remise depuis le dernier dépôt.</div></div>');
 }
 
-async function qualifier(id, statut, neutralise) {
-  await api("audit", "qualifierLibelle", { id:id, statut:statut, neutralise:neutralise });
+function basculer(id) {
+  const e = document.getElementById(id);
+  e.style.display = e.style.display === "none" ? "block" : "none";
+}
+
+async function qualifierLot(ids, statut, neutralise) {
+  for (const id of ids)
+    await api("audit", "qualifierLibelle", { id:id, statut:statut, neutralise:neutralise });
   aller("libelles");
 }
 
