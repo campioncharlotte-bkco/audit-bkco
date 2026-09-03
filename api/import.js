@@ -283,15 +283,25 @@ async function enregistrerLibelles(donnees, date) {
       body: JSON.stringify(nouveaux.map(l => ({
         libelle: l, famille: (l.match(/^\[([^\]]+)\]/) || [, "AUTRE"])[1],
         premiere_vue: date, derniere_vue: date }))) });
-  // Une centaine de libellés dans une seule URL faisait plusieurs kilooctets
-  // et se faisait refuser par la passerelle : on découpe par paquets de 20.
-  for (let i = 0; i < vus.length; i += 20) {
-    const paquet = vus.slice(i, i + 20)
-      .map(v => `"${String(v).replace(/["(),]/g, " ")}"`).join(",");
-    await sb(`libelles_remise?libelle=in.(${encodeURI(paquet)})`,
-      { method: "PATCH", prefer: "return=minimal",
-        body: JSON.stringify({ derniere_vue: date }) });
-  }
+  // La date de dernière vue est cosmétique : elle ne sert qu'à afficher
+  // « vu du … au … » dans l'onglet Remises. Elle ne doit jamais faire échouer
+  // un dépôt de 4 000 lignes, d'où le try/catch qui l'entoure.
+  //
+  // Un libellé sur deux contient un « % » — ce sont des remises en pourcentage.
+  // Dans une URL, « % » ouvre un code d'échappement : « -15% Drive » encodé
+  // naïvement donne « -15%%20Drive », que PostgREST ne sait plus relire.
+  // encodeURIComponent le transforme en « %25 », ce qui règle le problème.
+  // On met à jour libellé par libellé : l'URL reste courte et un libellé
+  // exotique ne peut plus entraîner les autres dans sa chute.
+  try {
+    for (let i = 0; i < vus.length; i += 8) {
+      await Promise.all(vus.slice(i, i + 8).map(v =>
+        sb(`libelles_remise?libelle=eq.${encodeURIComponent(v)}`,
+          { method: "PATCH", prefer: "return=minimal",
+            body: JSON.stringify({ derniere_vue: date }) })
+          .catch(() => null)));
+    }
+  } catch { /* sans conséquence sur les données déposées */ }
   return nouveaux;
 }
 
