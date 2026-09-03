@@ -67,6 +67,12 @@ async function contexte(uid) {
 }
 const dansPerimetre = (ctx, id, droit = "lecture") => ctx[droit].includes(Number(id));
 
+// Dernier jour du mois dont on reçoit le premier jour ('2026-08-01').
+function finDuMois(mois) {
+  const an = Number(mois.slice(0, 4)), m = Number(mois.slice(5, 7));
+  return `${mois.slice(0, 7)}-${String(new Date(an, m, 0).getDate()).padStart(2, "0")}`;
+}
+
 /* ---------- actions ---------- */
 
 const actions = {
@@ -219,30 +225,56 @@ const actions = {
     return { ok: true, refermees };
   },
 
-  // Suivi des encadrants : ce qu'ils valident, rapporté à leur exposition.
-  // Le montant brut favorise mécaniquement ceux qui valident le plus de
-  // caisses, donc on renvoie aussi la part de sessions déficitaires.
-  async encadrants({ restaurant_id, mois }, ctx) {
+  // Écarts de caisse : trois angles sur la même donnée.
+  //   - par session : le fait daté, avec sa fenêtre caméra ;
+  //   - par caisse  : le TAUX de sessions en écart, pas le cumul — sinon
+  //     la caisse la plus utilisée ressort toujours en tête ;
+  //   - par encadrant : l'écart moyen par session validée, même raison.
+  // Les sessions dont le manquant espèces est repris par la CB ou le TPE
+  // sont renvoyées à part : ce sont des erreurs de saisie, pas des trous.
+  async caisses({ restaurant_id, mois }, ctx) {
     const restos = restaurant_id && dansPerimetre(ctx, restaurant_id)
       ? [Number(restaurant_id)] : ctx.lecture;
-    if (!restos.length) return { encadrants: [] };
-    const [suivi, ecarts] = await Promise.all([
-      sb(`v_encadrants_mois?restaurant_id=in.(${restos.join(",")})&select=*&order=mois.desc`),
-      sb(`v_encadrants_ecarts?restaurant_id=in.(${restos.join(",")})&select=*`)
+    if (!restos.length) return { caisses: [], sessions: [], compensees: [], encadrants: [] };
+    const f = `restaurant_id=in.(${restos.join(",")})`;
+    const [parCaisse, suivi, ecartsEnc, ids] = await Promise.all([
+      sb(`v_caisses_ecarts?${f}&select=*&order=mois.desc`),
+      sb(`v_encadrants_mois?${f}&select=*&order=mois.desc`),
+      sb(`v_encadrants_ecarts?${f}&select=*`),
+      sb(`v_identites?${f}&select=*`)
     ]);
-    const moisRetenu = mois || (suivi[0] && suivi[0].mois);
-    const courant = suivi.filter(l => l.mois === moisRetenu && !ctx.masques.includes(l.responsable));
+    const moisDispo = [...new Set([...parCaisse.map(l => l.mois), ...suivi.map(l => l.mois)])]
+      .sort().reverse();
+    const m = mois || moisDispo[0] || null;
+    const noms = {};
+    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
+
+    let brutes = [];
+    if (m) {
+      brutes = await sb(`v_ecarts_sessions?${f}&date_fiscale=gte.${m.slice(0, 7)}-01`
+        + `&date_fiscale=lte.${finDuMois(m)}&select=*&order=date_fiscale.desc`);
+      brutes = brutes.filter(s => !ctx.masques.includes(s.badge_code)
+                               && !ctx.masques.includes(s.responsable));
+    }
+
     return {
-      mois: moisRetenu,
-      mois_disponibles: [...new Set(suivi.map(l => l.mois))].sort().reverse(),
-      encadrants: courant.map(l => ({
-        ...l,
-        historique: suivi.filter(h => h.responsable === l.responsable
-                                   && h.restaurant_id === l.restaurant_id)
-                         .sort((x, y) => x.mois < y.mois ? -1 : 1),
-        ecarts: ecarts.find(e => e.responsable === l.responsable
-                              && e.restaurant_id === l.restaurant_id) || null
-      })).sort((x, y) => (x.ecart_par_session ?? 0) - (y.ecart_par_session ?? 0))
+      mois: m,
+      mois_disponibles: moisDispo,
+      noms,
+      caisses: parCaisse.filter(l => l.mois === m)
+        .sort((a, b) => (Number(b.taux_lourdes) || 0) - (Number(a.taux_lourdes) || 0)),
+      sessions: brutes.filter(s => !s.compense),
+      compensees: brutes.filter(s => s.compense),
+      encadrants: suivi.filter(l => l.mois === m && !ctx.masques.includes(l.responsable))
+        .map(l => ({
+          ...l,
+          historique: suivi.filter(h => h.responsable === l.responsable
+                                     && h.restaurant_id === l.restaurant_id)
+                           .sort((x, y) => x.mois < y.mois ? -1 : 1),
+          ecarts: ecartsEnc.find(e => e.responsable === l.responsable
+                                   && e.restaurant_id === l.restaurant_id) || null
+        }))
+        .sort((x, y) => (x.ecart_par_session ?? 0) - (y.ecart_par_session ?? 0))
     };
   },
 
