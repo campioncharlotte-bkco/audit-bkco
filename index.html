@@ -102,6 +102,8 @@ textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
 .alerte{padding:11px 13px;border-radius:7px;font-size:14px;margin-bottom:14px}
 .alerte.erreur{background:#f6e6e5;color:var(--rouge)}
 .alerte.info{background:#eef2f6;color:var(--profond)}
+.explication{padding:11px 14px;background:#eef2f6;color:var(--profond);
+  font-size:13.5px;line-height:1.45;border-bottom:1px solid var(--filet)}
 .chargement{color:var(--ardoise);padding:30px;text-align:center}
 </style>
 </head>
@@ -225,18 +227,35 @@ function libelleRegle(a) {
   }[r] || r || "Écart";
 }
 
-/* Regroupé par personne : ce qu'on cherche, ce n'est pas un écart isolé
-   mais un badge qui revient d'une semaine sur l'autre. */
-async function vueAnomalies() {
+/* On regarde d'abord les responsables : ce sont eux qui valident les
+   comptages, les annulations et les remises. Un écart isolé ne dit rien,
+   un responsable qui revient chaque semaine dit quelque chose. */
+
+const EXPLICATIONS = {
+  SESSION_ECART_ESPECES: "À la fermeture d'une caisse, l'argent compté est inférieur à ce que la caisse a enregistré. Le responsable nommé est celui qui a compté et validé.",
+  SESSION_ECART_TARDIF: "Même chose, sur une caisse fermée après 22 h — le créneau où les contrôles sont les plus rares.",
+  ANNUL_DELAI: "Un ticket a été annulé plusieurs heures après l'encaissement, alors que la procédure demande de le faire aussitôt. Ce délai permet de choisir après coup les tickets à annuler.",
+  REMISE_LIBELLE_INCONNU: "Une remise a été appliquée avec un libellé qui n'a pas encore été qualifié. Qualifiez-le dans l'onglet Remises s'il est légitime.",
+  REMISE_LIBELLE_INTERDIT: "Une remise a été appliquée avec un libellé que vous avez marqué comme non autorisé.",
+  CO_HORS_RUSH: "Des commandes envoyées au paiement n'ont jamais été finalisées, concentrées en fin de service. Si le client a payé en espèces sans que la commande soit validée, l'encaissement n'apparaît nulle part.",
+  CO_AUTO_DOMINANT: "Les commandes non finalisées ont été annulées par le système à la fermeture. Aucun nom n'y est associé : impossible de savoir qui a servi ces commandes.",
+  RATIO_HORS_SEUIL: "Le restaurant dépasse la moyenne du réseau sur ce ratio.",
+  TEND_EN_HAUSSE: "Ce ratio augmente mois après mois chez cette personne.",
+  TEND_STABLE_HAUT: "Ce ratio reste durablement au-dessus de la moyenne du restaurant."
+};
+
+async function vueAnomalies(params) {
+  const axe = (params && params.axe) || E.axe || "manager";
+  E.axe = axe;
   const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
-  E.anomalies = d.anomalies;
   const groupes = {};
   d.anomalies.forEach(function(a){
-    const k = a.badge_code || "—";
-    if (!groupes[k]) groupes[k] = { badge:k, liste:[], cumul:0, urgence:null };
+    const k = (axe === "manager" ? a.manager_code : a.badge_code) || "—";
+    if (!groupes[k]) groupes[k] = { qui:k, liste:[], cumul:0, urgence:null, jours:{} };
     const g = groupes[k];
     g.liste.push(a);
     g.cumul += Math.abs(Number(a.montant_ttc) || 0);
+    g.jours[String(a.periode_debut).slice(0,10)] = 1;
     const r = resteCamera(a.echeance_camera);
     if (r !== null && (g.urgence === null || r < g.urgence)) g.urgence = r;
   });
@@ -248,52 +267,62 @@ async function vueAnomalies() {
 
   $("#vue").innerHTML =
     '<h2>À vérifier</h2>' +
-    '<p class="sous">' + d.anomalies.length + ' écart(s) répartis sur ' + cles.length +
-      ' personne(s). Ceux qui reviennent le plus souvent sont en haut.</p>' +
+    '<p class="sous">' + d.anomalies.length + ' écart(s) à expliquer. ' +
+      'Le classement met en tête ceux dont le nom revient le plus souvent.</p>' +
+    '<div class="actions" style="margin:0 0 16px">' +
+      '<button' + (axe === "manager" ? ' class="fort"' : '') +
+        ' onclick="aller(\'anomalies\',{axe:\'manager\'})">Par responsable</button>' +
+      '<button' + (axe === "equipier" ? ' class="fort"' : '') +
+        ' onclick="aller(\'anomalies\',{axe:\'equipier\'})">Par équipier en caisse</button>' +
+    '</div>' +
     (d.masquees ? '<div class="alerte info">' + d.masquees +
       ' élément(s) vous concernant sont traités par votre hiérarchie.</div>' : '') +
-    (cles.length ? cles.map(function(k){ return blocPersonne(groupes[k]); }).join("")
+    (cles.length ? cles.map(function(k){ return blocPersonne(groupes[k], axe); }).join("")
       : '<div class="bloc"><div class="vide"><b>Rien à vérifier</b>' +
         'Déposez les exports de la période pour lancer une analyse.</div></div>');
 }
 
-function blocPersonne(g) {
-  const id = "p" + g.badge.replace(/[^A-Za-z0-9]/g, "") || "psans";
-  // ce qui compte est le motif qui se répète, pas le détail de chaque ligne
+function blocPersonne(g, axe) {
+  const id = "p" + (g.qui.replace(/[^A-Za-z0-9]/g, "") || "sans");
   const parType = {};
   g.liste.forEach(function(a){
     const t = (a.regles_declenchees || [])[0] || "AUTRE";
     parType[t] = (parType[t] || 0) + 1;
   });
-  const resume = Object.keys(parType).map(function(t){
-    return parType[t] + " " + nomCourt(t, parType[t]); }).join(" · ");
+  const types = Object.keys(parType);
+  const resume = types.map(function(t){ return parType[t] + " " + nomCourt(t, parType[t]); }).join(" · ");
+  const nbJours = Object.keys(g.jours).length;
   const urg = g.urgence === null ? "" :
     g.urgence < 0 ? '<span class="etiquette expire">images perdues</span>' :
     g.urgence <= 4 ? '<span class="etiquette urgent">' + g.urgence + ' j pour la caméra</span>' :
     '<span class="etiquette">' + g.urgence + ' j</span>';
+  const titre = g.qui === "—"
+    ? (axe === "manager" ? "Sans responsable identifié" : "Sans équipier identifié")
+    : esc(g.qui);
 
   return '<div class="bloc">' +
     '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
-      '<div class="corps">' +
-        '<div class="titre">' + (g.badge === "—" ? "Écarts sans badge identifié" : esc(g.badge)) + '</div>' +
-        '<div class="detail">' + esc(resume) + '</div>' +
-      '</div>' +
-      '<div style="text-align:right">' +
-        '<div class="montant num">' + eur(g.cumul) + '</div>' +
-        '<div style="margin-top:4px">' + urg + '</div>' +
-      '</div>' +
+      '<div class="corps"><div class="titre">' + titre + '</div>' +
+      '<div class="detail">' + esc(resume) + ' · sur ' + nbJours + ' jour(s)</div></div>' +
+      '<div style="text-align:right"><div class="montant num">' + eur(g.cumul) + '</div>' +
+      '<div style="margin-top:4px">' + urg + '</div></div>' +
     '</button>' +
     '<div id="' + id + '" style="display:none">' +
-      g.liste.map(function(a){
-        const r = resteCamera(a.echeance_camera);
-        return '<button class="ligne" style="padding-left:26px" ' +
-          'onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
-          '<div class="corps"><div class="titre" style="font-weight:500">' +
-            esc(libelleRegle(a)) + '</div>' +
-          '<div class="detail">' + jour(a.periode_debut) + ' · ' +
-            esc(nomResto(a.restaurant_id)) + '</div></div>' +
-          '<div class="montant num ' + (a.montant_ttc < 0 ? "negatif" : "") + '">' +
-            eur(a.montant_ttc) + '</div></button>';
+      types.map(function(t){
+        return '<div class="explication">' + esc(EXPLICATIONS[t] || "") + '</div>' +
+          g.liste.filter(function(a){ return (a.regles_declenchees||[])[0] === t; })
+            .map(function(a){
+              return '<button class="ligne" style="padding-left:26px" ' +
+                'onclick="aller(\'anomalies\',{id:' + a.id + '})">' +
+                '<div class="corps"><div class="titre" style="font-weight:500">' +
+                  jour(a.periode_debut) + ' · ' + esc(nomCourt(t, 1)) + '</div>' +
+                '<div class="detail">' + esc(nomResto(a.restaurant_id)) +
+                  (axe === "manager" && a.badge_code ? " · caisse de " + esc(a.badge_code) : "") +
+                  (axe === "equipier" && a.manager_code ? " · validé par " + esc(a.manager_code) : "") +
+                  '</div></div>' +
+                '<div class="montant num ' + (a.montant_ttc < 0 ? "negatif" : "") + '">' +
+                  eur(a.montant_ttc) + '</div></button>';
+            }).join("");
       }).join("") +
     '</div></div>';
 }
@@ -327,6 +356,7 @@ async function ouvrirAnomalie(id) {
     (reste !== null && reste <= 4 ? '<div class="alerte erreur">' + (reste < 0
       ? "Les images de cette période ne sont plus disponibles."
       : "Il reste " + reste + " jour(s) pour consulter les images.") + '</div>' : '') +
+    '<div class="explication">' + esc(EXPLICATIONS[(a.regles_declenchees||[])[0]] || "") + '</div>' +
     '<div class="bloc"><div class="zone"><dl>' +
       Object.keys(p).map(function(k){
         const v = p[k];
