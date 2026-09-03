@@ -308,6 +308,10 @@ function moisDisponibles(n) {
   }
   return l;
 }
+function bornesMois(mois) {
+  const an = Number(mois.slice(0,4)), m = Number(mois.slice(5,7));
+  return [mois + "-01", mois + "-" + String(new Date(an, m, 0).getDate()).padStart(2,"0")];
+}
 
 async function vueDepot(params) {
   const restos = E.restaurants.filter(r => E.droits.depot.indexOf(r.id) >= 0);
@@ -318,15 +322,15 @@ async function vueDepot(params) {
     mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0]
   };
   const rid = E.depot.restaurant_id, mois = E.depot.mois;
-  const an = Number(mois.slice(0,4)), m = Number(mois.slice(5,7));
-  const debut = mois + "-01";
-  const fin = mois + "-" + String(new Date(an, m, 0).getDate()).padStart(2,"0");
+  const bornes = bornesMois(mois);
 
-  const d = await api("audit", "depots", { restaurant_id:rid, debut:debut, fin:fin });
+  const d = await api("audit", "depots", { restaurant_id:rid, debut:bornes[0], fin:bornes[1] });
   const deposes = {};
-  d.imports.forEach(function(i){ if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
-  const attendus = d.types.filter(t => t.obligatoire);
-  const faits = attendus.filter(t => deposes[t.code]).length;
+  d.imports.forEach(function(i){
+    if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
+  const visibles = d.types.filter(t => t.obligatoire || deposes[t.code]);
+  E.attendus = d.types.filter(t => t.obligatoire).length;
+  E.faits = d.types.filter(t => t.obligatoire && deposes[t.code]).length;
 
   $("#vue").innerHTML =
     '<h2>Déposer les exports</h2>' +
@@ -343,11 +347,12 @@ async function vueDepot(params) {
           (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
         '</select></label>' +
     '</div>' +
-    '<div class="progression"><div class="jauge"><span style="width:' +
-      (attendus.length ? faits / attendus.length * 100 : 0) + '%"></span></div>' +
-      '<b>' + faits + ' sur ' + attendus.length + '</b> rapports déposés pour cette période</div>' +
-    '<div class="bloc">' + d.types.filter(t => t.obligatoire || deposes[t.code])
-      .map(t => ligneDepot(t, deposes[t.code])).join("") + '</div>' +
+    '<div class="progression"><div class="jauge"><span id="jauge" style="width:' +
+      (E.attendus ? E.faits / E.attendus * 100 : 0) + '%"></span></div>' +
+      '<b id="compteur">' + E.faits + ' sur ' + E.attendus + '</b>' +
+      ' rapports déposés pour cette période</div>' +
+    '<div class="bloc">' + visibles.map(t => ligneDepot(t, deposes[t.code])).join("") + '</div>' +
+    '<div id="bilan"></div>' +
     '<p class="sous" style="margin-top:14px">Les rapports « chaque semaine » alimentent la ' +
       'vérification caméra : passé 14 jours, les images ne sont plus disponibles.</p>';
 }
@@ -355,8 +360,8 @@ async function vueDepot(params) {
 function ligneDepot(t, imp) {
   const id = "d" + t.code;
   const multi = t.code === "SYNTHESE_CA";
-  return '<div class="ligne" id="l' + id + '"><div class="corps"><div class="titre">' +
-    esc(t.libelle_menu) +
+  return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') + '>' +
+    '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
     (multi ? ' <span class="etiquette">9 fichiers</span>' : '') +
     (t.frequence === "HEBDO" ? ' <span class="etiquette">chaque semaine</span>' : '') +
     '</div><div class="detail">' +
@@ -368,30 +373,70 @@ function ligneDepot(t, imp) {
       id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
 }
 
+/* Le dépôt se fait ligne par ligne, sans recharger l'écran : on peut
+   enchaîner les rapports sans perdre le fil. */
 async function envoyer(fichiers, codeAttendu, idLigne) {
   const rid = E.depot.restaurant_id;
-  const detail = document.getElementById("l" + idLigne).querySelector(".detail");
-  let ok = 0; const messages = [];
+  const bornes = bornesMois(E.depot.mois);
+  const ligne = document.getElementById("l" + idLigne);
+  const detail = ligne.querySelector(".detail");
+  const bouton = ligne.querySelector(".bouton-depot");
+  const dejaFait = ligne.dataset.fait === "1";
+  bouton.disabled = true;
+  const initial = bouton.textContent;
+  bouton.textContent = "…";
+
+  let ok = 0, lignesLues = 0, ecarts = 0, aQualifier = 0;
+  const soucis = [];
   for (const f of fichiers) {
-    detail.textContent = "lecture de " + f.name + "…";
+    detail.textContent = "envoi de " + f.name + "…";
     try {
       const contenu = await f.text();
       const d = await api("import", "deposer", { contenu:contenu, nom_fichier:f.name,
-        restaurant_id:rid, periode_debut: E.depot.mois + "-01" });
+        restaurant_id:rid, periode_debut:bornes[0], periode_fin:bornes[1] });
       const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
       const recu = d.synthese ? "SYNTHESE" : d.type;
-      const bonneCase = recu === attendu ||
-        (codeAttendu === "REMISES_50" && recu === "REMISES") ||
-        (codeAttendu === "REMISES" && recu === "REMISES");
-      if (!bonneCase) messages.push(f.name + " est un rapport " + recu + ", rangé au bon endroit");
-      else ok++;
-      if (d.anomalies && d.anomalies.creees) messages.push(d.anomalies.creees + " écart(s) détecté(s)");
-      if (d.libelles_a_qualifier && d.libelles_a_qualifier.length)
-        messages.push(d.libelles_a_qualifier.length + " remise(s) à qualifier");
-    } catch (e) { messages.push(f.name + " refusé : " + e.message); }
+      const bonneCase = recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES");
+      if (!bonneCase) soucis.push(f.name + " contient un rapport " + recu + " : rangé au bon endroit");
+      ok++; lignesLues += d.nb || 0;
+      if (d.anomalies && d.anomalies.creees) ecarts += d.anomalies.creees;
+      if (d.libelles_a_qualifier) aQualifier += d.libelles_a_qualifier.length;
+    } catch (e) { soucis.push(f.name + " : " + e.message); }
   }
-  detail.textContent = ok + " fichier(s) accepté(s). " + messages.join(" · ");
-  setTimeout(function(){ aller("depot", E.depot); }, 2800);
+
+  if (ok) {
+    ligne.dataset.fait = "1";
+    bouton.textContent = "Remplacer";
+    bouton.classList.add("fait");
+    detail.innerHTML = '<span style="color:var(--vert);font-weight:600">✓ déposé</span> · ' +
+      lignesLues + ' lignes' + (soucis.length ? ' · ' + soucis.map(esc).join(' · ') : '');
+    if (!dejaFait) majJauge(1);
+  } else {
+    bouton.textContent = initial;
+    detail.innerHTML = '<span style="color:var(--rouge)">' + esc(soucis.join(" · ")) + '</span>';
+  }
+  bouton.disabled = false;
+  annoncer(ecarts, aQualifier);
+}
+
+function majJauge(n) {
+  E.faits = Math.min((E.faits || 0) + n, E.attendus);
+  const j = document.getElementById("jauge"), c = document.getElementById("compteur");
+  if (j) j.style.width = (E.attendus ? E.faits / E.attendus * 100 : 0) + "%";
+  if (c) c.textContent = E.faits + " sur " + E.attendus;
+}
+
+function annoncer(ecarts, aQualifier) {
+  E.bilan = { ecarts: (E.bilan ? E.bilan.ecarts : 0) + ecarts,
+              qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
+  const b = document.getElementById("bilan");
+  if (!b || (!E.bilan.ecarts && !E.bilan.qualif)) return;
+  const p = [];
+  if (E.bilan.ecarts) p.push('<a href="#" onclick="aller(\'anomalies\');return false">' +
+    E.bilan.ecarts + ' écart(s) détecté(s)</a>');
+  if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'libelles\');return false">' +
+    E.bilan.qualif + ' remise(s) à qualifier</a>');
+  b.innerHTML = '<div class="alerte info">' + p.join(" · ") + '</div>';
 }
 
 /* ---------- remises ---------- */
