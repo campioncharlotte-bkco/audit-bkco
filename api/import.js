@@ -64,10 +64,18 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
 
   // La période est lue dans le fichier, jamais déclarée par le déposant :
   // c'est ce qui empêche un dépôt tronqué de passer pour complet.
+  // Plusieurs rapports (flux caissiers, tickets non payants, responsable de
+  // comptage, synthèse) ne portent aucune date : la période vient alors de
+  // l'écran de dépôt. À défaut, on complète par le mois de la date connue.
   const debut = p.periode_debut || periode_debut;
-  const fin = p.periode_fin || periode_fin;
+  let fin = p.periode_fin || periode_fin;
+  if (debut && !fin) {
+    const d = new Date(debut);
+    fin = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+  }
   if (!debut || !fin)
-    return { erreur: "Période indéterminable : précisez-la au dépôt.", besoin_periode: true };
+    return { erreur: "Période indéterminable : choisissez le mois avant de déposer.",
+             besoin_periode: true };
 
   // Les 9 fichiers Synthèse ne portent ni site ni période : contrôle par
   // recoupement avec deux rapports datés déjà en base.
