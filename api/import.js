@@ -15,6 +15,9 @@ const KEY_SB = process.env.SUPABASE_SERVICE_KEY;
 const RETENTION_CAMERA = 14;      // jours
 const SEUIL_ECART_SESSION = 20;   // euros, écart de caisse jugé significatif
 const DELAI_ANNULATION_H = 2;     // procédure BK : annuler aussitôt, 2h max en rush
+const TOLERANCE_VENTILATION = 5;  // euros : en deçà, l'écart espèces est repris
+                                  // par un autre mode de règlement — erreur de
+                                  // saisie et non manquant
 
 async function sb(chemin, options = {}) {
   const r = await fetch(`${URL_SB}/rest/v1/${chemin}`, {
@@ -221,11 +224,17 @@ async function genererAnomalies(restaurant_id, debut, fin) {
   ]);
   const statutLibelle = new Map(libelles.map(l => [l.libelle, l.statut]));
 
-  // 1. Écarts de caisse. Les excédents plafonnent naturellement à quelques
-  //    euros : un manquant important n'est pas le symétrique du bruit.
+  // 1. Écarts de caisse. Un manquant espèces repris à l'euro près par la CB
+  //    ou le TPE n'est pas un manquant : c'est un encaissement saisi dans le
+  //    mauvais mode de règlement. Sans ce filtre, août 2026 à Abbeville
+  //    aurait produit 31 alertes dont 22 fausses.
   for (const s of sessions) {
     const ecart = Number(s.especes_declare) - Number(s.especes_theorique);
     if (ecart > -SEUIL_ECART_SESSION) continue;
+    const ecartCb  = Number(s.cb_declare  || 0) - Number(s.cb_theorique  || 0);
+    const ecartTpe = Number(s.tpe_declare || 0) - Number(s.tpe_theorique || 0);
+    const ecartGlobal = ecart + ecartCb + ecartTpe;
+    if (Math.abs(ecartGlobal) < TOLERANCE_VENTILATION) continue;
     const tardif = (s.fin_session || "").slice(11, 16) >= "22:00";
     pousser({
       niveau: "SESSION", ratio: "ESPECES",
@@ -236,6 +245,9 @@ async function genererAnomalies(restaurant_id, debut, fin) {
       regles_declenchees: ["SESSION_ECART_ESPECES", ...(tardif ? ["SESSION_ECART_TARDIF"] : [])],
       echeance_camera: jours(s.date_fiscale, RETENTION_CAMERA),
       pieces: { caisse: s.caisse, theorique: s.especes_theorique, declare: s.especes_declare,
+                ecart_global: Math.round(ecartGlobal * 100) / 100,
+                ecart_cb: Math.round(ecartCb * 100) / 100,
+                ecart_tpe: Math.round(ecartTpe * 100) / 100,
                 validee_par: s.valide_par, fin_session: s.fin_session }
     });
   }
