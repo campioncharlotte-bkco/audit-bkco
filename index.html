@@ -2,11 +2,476 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1a2028">
 <title>Audit BKCO</title>
+<style>
+:root{
+  --papier:#f6f7f8; --surface:#fff; --encre:#1a2028; --ardoise:#5a6672;
+  --filet:#dfe3e7; --profond:#243b53; --ambre:#b8730e; --rouge:#a32f2a;
+  --vert:#2e6b4f; --sable:#f0ece4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--papier); color:var(--encre);
+  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+/* les montants s'alignent : c'est un outil de colonnes de chiffres */
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+a{color:var(--profond)}
+
+/* ---------- connexion ---------- */
+#connexion{min-height:100dvh;display:grid;place-items:center;padding:24px}
+.carte-connexion{width:100%;max-width:340px}
+.carte-connexion h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
+.carte-connexion p{color:var(--ardoise);margin:0 0 28px;font-size:14px}
+.champ{display:block;margin-bottom:14px}
+.champ span{display:block;font-size:13px;color:var(--ardoise);margin-bottom:5px}
+.champ input{width:100%;padding:11px 12px;border:1px solid var(--filet);
+  border-radius:7px;background:var(--surface)}
+.champ input:focus{outline:2px solid var(--profond);outline-offset:1px;border-color:transparent}
+.principal{width:100%;padding:12px;border-radius:7px;background:var(--profond);
+  color:#fff;font-weight:600}
+.principal:disabled{opacity:.5}
+
+/* ---------- ossature ---------- */
+#app{display:none;min-height:100dvh;padding-bottom:76px}
+header{position:sticky;top:0;z-index:10;background:var(--surface);
+  border-bottom:1px solid var(--filet);padding:12px 16px;
+  display:flex;align-items:center;gap:12px}
+header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
+header .qui{margin-left:auto;font-size:13px;color:var(--ardoise)}
+main{max-width:940px;margin:0 auto;padding:18px 16px}
+h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
+.sous{color:var(--ardoise);font-size:14px;margin:0 0 20px}
+
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);
+  border-top:1px solid var(--filet);display:flex;
+  padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--ardoise);
+  display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button b{font-size:16px;font-weight:400;line-height:1}
+nav button[aria-current="page"]{color:var(--profond);font-weight:600;
+  box-shadow:inset 0 2px 0 var(--profond)}
+@media(min-width:800px){
+  #app{padding-bottom:0}
+  nav{position:sticky;top:53px;bottom:auto;border-top:0;border-bottom:1px solid var(--filet);
+    max-width:940px;margin:0 auto;padding:0}
+  nav button{flex:0 0 auto;padding:12px 16px;font-size:14px;flex-direction:row;gap:7px}
+}
+
+/* ---------- listes ---------- */
+.bloc{background:var(--surface);border:1px solid var(--filet);border-radius:9px;
+  overflow:hidden;margin-bottom:16px}
+.ligne{display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid var(--filet);
+  align-items:baseline;width:100%;text-align:left}
+.ligne:last-child{border-bottom:0}
+button.ligne:hover{background:var(--papier)}
+.ligne .corps{flex:1;min-width:0}
+.ligne .titre{font-weight:600;font-size:14.5px}
+.ligne .detail{color:var(--ardoise);font-size:13px;margin-top:2px}
+.montant{font-weight:650;white-space:nowrap}
+.montant.negatif{color:var(--rouge)}
+
+.etiquette{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:4px;
+  background:var(--sable);color:var(--ardoise);font-weight:600}
+.etiquette.urgent{background:#f7ede0;color:var(--ambre)}
+.etiquette.expire{background:#f6e6e5;color:var(--rouge)}
+.etiquette.ok{background:#e6efea;color:var(--vert)}
+
+.vide{padding:40px 20px;text-align:center;color:var(--ardoise)}
+.vide b{display:block;color:var(--encre);margin-bottom:6px;font-size:15px}
+
+/* ---------- dépôt ---------- */
+.depot{border:1.5px dashed var(--filet);border-radius:9px;padding:26px 18px;
+  text-align:center;background:var(--surface)}
+.depot.actif{border-color:var(--profond);background:#f0f4f8}
+.journal{margin-top:14px;font-size:13.5px}
+.journal div{padding:7px 0;border-bottom:1px solid var(--filet);display:flex;gap:9px}
+.journal div:last-child{border-bottom:0}
+.journal .etat{flex:0 0 18px}
+
+/* ---------- détail ---------- */
+.retour{color:var(--ardoise);font-size:14px;margin-bottom:12px;padding:4px 0}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:14px}
+dt{color:var(--ardoise)}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.zone{padding:14px}
+textarea{width:100%;min-height:78px;padding:10px;border:1px solid var(--filet);
+  border-radius:7px;resize:vertical;background:var(--surface)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.actions button{padding:9px 14px;border-radius:7px;border:1px solid var(--filet);
+  background:var(--surface);font-size:14px;font-weight:500}
+.actions button.fort{background:var(--profond);color:#fff;border-color:var(--profond)}
+select{padding:9px 11px;border:1px solid var(--filet);border-radius:7px;background:var(--surface)}
+
+.alerte{padding:11px 13px;border-radius:7px;font-size:14px;margin-bottom:14px}
+.alerte.erreur{background:#f6e6e5;color:var(--rouge)}
+.alerte.info{background:#eef2f6;color:var(--profond)}
+.chargement{color:var(--ardoise);padding:30px;text-align:center}
+</style>
 </head>
-<body style="font-family:system-ui;padding:2rem">
-<h1>Audit BKCO</h1>
-<p>Installation en cours.</p>
+<body>
+
+<section id="connexion">
+  <form class="carte-connexion" onsubmit="seConnecter(event)">
+    <h1>Audit BKCO</h1>
+    <p>Suivi des écarts de caisse et des ratios financiers.</p>
+    <div id="err-connexion"></div>
+    <label class="champ"><span>Adresse e-mail</span>
+      <input id="email" type="email" autocomplete="username" required></label>
+    <label class="champ"><span>Code</span>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required></label>
+    <button class="principal" id="btn-connexion">Se connecter</button>
+  </form>
+</section>
+
+<div id="app">
+  <header>
+    <h1>Audit BKCO</h1>
+    <span class="qui" id="qui"></span>
+    <button onclick="seDeconnecter()" style="color:var(--ardoise);font-size:13px">Quitter</button>
+  </header>
+  <nav id="nav"></nav>
+  <main id="vue"></main>
+</div>
+
+<script>
+const E = {};                       // état de session
+const $ = s => document.querySelector(s);
+const eur = n => (n === null || n === undefined ? "—" :
+  Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
+const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}) : "—";
+const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+
+async function api(fichier, action, params = {}) {
+  const r = await fetch(`/api/${fichier}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ action, jeton: E.jeton, ...params })
+  });
+  const d = await r.json();
+  if (r.status === 401) { seDeconnecter(); throw new Error("Session expirée"); }
+  if (d.erreur) throw new Error(d.erreur);
+  return d;
+}
+
+/* ---------- connexion ---------- */
+
+async function seConnecter(ev) {
+  ev.preventDefault();
+  const b = $("#btn-connexion"); b.disabled = true; b.textContent = "Connexion…";
+  try {
+    const r = await fetch("/api/audit", { method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ action:"connexion", email:$("#email").value.trim(), pin:$("#pin").value }) });
+    const d = await r.json();
+    if (d.erreur) throw new Error(d.erreur);
+    localStorage.setItem("jeton-audit", d.jeton);
+    E.jeton = d.jeton;
+    await demarrer();
+  } catch (e) {
+    $("#err-connexion").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`;
+  } finally { b.disabled = false; b.textContent = "Se connecter"; }
+}
+
+function seDeconnecter() {
+  localStorage.removeItem("jeton-audit");
+  location.reload();
+}
+
+async function demarrer() {
+  const d = await api("audit", "moi");
+  Object.assign(E, d);
+  $("#connexion").style.display = "none";
+  $("#app").style.display = "block";
+  $("#qui").textContent = d.utilisateur.nom;
+  const onglets = [
+    ["anomalies","À vérifier","!"],
+    ["depot","Dépôt","+"],
+    ["libelles","Remises","%"],
+    ["equipe","Équipe","•"]
+  ];
+  if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
+  $("#nav").innerHTML = onglets.map(([c,l,i]) =>
+    `<button data-onglet="${c}" onclick="aller('${c}')"><b>${i}</b>${l}</button>`).join("");
+  aller(E.droits.lecture.length ? "anomalies" : "depot");
+}
+
+function aller(onglet, params) {
+  E.onglet = onglet;
+  document.querySelectorAll("#nav button").forEach(b =>
+    b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"));
+  $("#vue").innerHTML = `<p class="chargement">Chargement…</p>`;
+  ({ anomalies:vueAnomalies, depot:vueDepot, libelles:vueLibelles,
+     equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
+}
+const afficherErreur = e => $("#vue").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`;
+
+/* ---------- file d'anomalies ---------- */
+
+function resteCamera(echeance) {
+  if (!echeance) return null;
+  return Math.ceil((new Date(echeance) - new Date()) / 86400000);
+}
+
+async function vueAnomalies() {
+  const d = await api("audit", "anomalies", { statut:"A_VERIFIER" });
+  const nomResto = id => (E.restaurants.find(r => r.id === id) || {}).nom || "";
+  const lignes = d.anomalies.map(a => {
+    const reste = resteCamera(a.echeance_camera);
+    const badge = reste === null ? "" :
+      reste < 0 ? `<span class="etiquette expire">images perdues</span>` :
+      reste <= 4 ? `<span class="etiquette urgent">${reste} j pour la caméra</span>` :
+      `<span class="etiquette">${reste} j</span>`;
+    return `<button class="ligne" onclick="aller('anomalies',{id:${a.id}})">
+      <div class="corps">
+        <div class="titre">${esc(libelleRegle(a))}</div>
+        <div class="detail">${esc(nomResto(a.restaurant_id))} · ${jour(a.periode_debut)}
+          ${a.badge_code ? "· " + esc(a.badge_code) : ""}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="montant num ${a.montant_ttc < 0 ? "negatif":""}">${eur(a.montant_ttc)}</div>
+        <div style="margin-top:4px">${badge}</div>
+      </div></button>`;
+  }).join("");
+  $("#vue").innerHTML = `
+    <h2>À vérifier</h2>
+    <p class="sous">${d.anomalies.length} écart${d.anomalies.length>1?"s":""} à expliquer,
+      les plus urgents d'abord : les images de vidéosurveillance ne sont gardées que 14 jours.</p>
+    ${d.masquees ? `<div class="alerte info">${d.masquees} élément(s) vous concernant
+      sont traités par votre hiérarchie.</div>` : ""}
+    <div class="bloc">${lignes || `<div class="vide"><b>Rien à vérifier</b>
+      Déposez les exports de la semaine pour lancer une analyse.</div>`}</div>`;
+  if (E.detailId) { const id = E.detailId; E.detailId = null; ouvrirAnomalie(id); }
+}
+
+function libelleRegle(a) {
+  const r = (a.regles_declenchees || [])[0];
+  const p = a.pieces || {};
+  return {
+    SESSION_ECART_ESPECES: `Manquant en caisse${p.validee_par ? " · validé par " + p.validee_par : ""}`,
+    SESSION_ECART_TARDIF:  "Manquant en caisse sur une clôture de fin de service",
+    ANNUL_DELAI:           `Annulation ${p.delai_heures ? Math.round(p.delai_heures) + " h" : ""} après le ticket`,
+    REMISE_LIBELLE_INCONNU:`Remise non répertoriée : ${p.libelle || ""}`,
+    REMISE_LIBELLE_INTERDIT:`Remise non autorisée : ${p.libelle || ""}`,
+    CO_HORS_RUSH:          "Commandes ouvertes concentrées après 21 h",
+    CO_AUTO_DOMINANT:      "Commandes ouvertes annulées par le système, sans traçabilité"
+  }[r] || r || "Écart";
+}
+
+async function ouvrirAnomalie(id) {
+  const { anomalie:a, evenements } = await api("audit", "anomalie", { id });
+  const p = a.pieces || {};
+  const peutClore = E.droits.cloture.includes(a.restaurant_id);
+  const reste = resteCamera(a.echeance_camera);
+  $("#vue").innerHTML = `
+    <button class="retour" onclick="aller('anomalies')">← Retour à la liste</button>
+    <h2>${esc(libelleRegle(a))}</h2>
+    <p class="sous">${esc((E.restaurants.find(r=>r.id===a.restaurant_id)||{}).nom||"")} ·
+      ${jour(a.periode_debut)}${a.badge_code ? " · badge " + esc(a.badge_code) : ""}</p>
+    ${reste !== null && reste <= 4 ? `<div class="alerte erreur">${reste < 0
+      ? "Les images de cette période ne sont plus disponibles."
+      : `Il reste ${reste} jour(s) pour consulter les images.`}</div>` : ""}
+    <div class="bloc"><div class="zone"><dl>
+      ${Object.entries(p).map(([k,v]) => `<dt>${esc(k.replace(/_/g," "))}</dt>
+        <dd>${esc(Array.isArray(v) ? v.join(", ") : v)}</dd>`).join("")}
+      <dt>Montant</dt><dd class="num">${eur(a.montant_ttc)}</dd>
+      <dt>Score</dt><dd class="num">${a.score ?? "—"}</dd>
+    </dl></div></div>
+    ${evenements.length ? `<div class="bloc">${evenements.map(e =>
+      `<div class="ligne"><div class="corps"><div class="titre">${esc(e.type)}</div>
+      <div class="detail">${esc(e.contenu||"")} · ${jour(e.cree_le)}</div></div></div>`).join("")}</div>` : ""}
+    <div class="bloc"><div class="zone">
+      <textarea id="note" placeholder="Ce que vous avez constaté : vérification caméra, explication du salarié, erreur de procédure…"></textarea>
+      <div class="actions">
+        <button onclick="majAnomalie(${id},null)">Enregistrer la note</button>
+        ${peutClore ? `
+          <button onclick="majAnomalie(${id},'EXPLIQUEE')">Écart expliqué</button>
+          <button onclick="majAnomalie(${id},'CONFIRMEE')" class="fort">Écart confirmé</button>
+          <button onclick="majAnomalie(${id},'CLASSEE')">Classer sans suite</button>`
+        : `<span class="detail" style="align-self:center;color:var(--ardoise)">
+            Votre note remonte à la direction, qui décide de la suite.</span>`}
+      </div>
+    </div></div>`;
+}
+
+async function majAnomalie(id, statut) {
+  const c = $("#note").value.trim();
+  if (!c && !statut) return;
+  await api("audit", "majAnomalie", { id, statut, commentaire:c,
+    type: statut ? "EXPLICATION" : "COMMENTAIRE" });
+  aller("anomalies");
+}
+
+/* ---------- dépôt ---------- */
+
+async function vueDepot() {
+  const restos = E.restaurants.filter(r => E.droits.depot.includes(r.id));
+  if (!restos.length) return $("#vue").innerHTML =
+    `<div class="vide"><b>Aucun restaurant</b>Vous n'avez pas de droit de dépôt.</div>`;
+  $("#vue").innerHTML = `
+    <h2>Déposer les exports</h2>
+    <p class="sous">Dans Cash Système, descendez le menu Audit dans l'ordre et exportez en CSV.
+      Le restaurant et la période sont lus dans les fichiers.</p>
+    <label class="champ"><span>Restaurant</span>
+      <select id="resto">${restos.map(r =>
+        `<option value="${r.id}">${esc(r.nom)}</option>`).join("")}</select></label>
+    <div class="depot" id="zone">
+      <p style="margin:0 0 12px">Glissez les fichiers ici, ou</p>
+      <input type="file" id="fichiers" multiple accept=".csv" style="display:none"
+             onchange="envoyer(this.files)">
+      <button class="principal" style="width:auto;padding:10px 20px"
+        onclick="document.getElementById('fichiers').click()">Choisir des fichiers</button>
+    </div>
+    <div class="journal" id="journal"></div>`;
+  const z = $("#zone");
+  z.ondragover = e => { e.preventDefault(); z.classList.add("actif"); };
+  z.ondragleave = () => z.classList.remove("actif");
+  z.ondrop = e => { e.preventDefault(); z.classList.remove("actif"); envoyer(e.dataTransfer.files); };
+}
+
+async function envoyer(fichiers) {
+  const restaurant_id = Number($("#resto").value);
+  const j = $("#journal");
+  for (const f of fichiers) {
+    const id = "f" + Math.random().toString(36).slice(2);
+    j.insertAdjacentHTML("beforeend",
+      `<div id="${id}"><span class="etat">·</span><span>${esc(f.name)} — lecture…</span></div>`);
+    try {
+      const contenu = await f.text();
+      const d = await api("import", "deposer",
+        { contenu, nom_fichier:f.name, restaurant_id });
+      const sup = [];
+      if (d.anomalies?.creees) sup.push(`${d.anomalies.creees} écart(s) détecté(s)`);
+      if (d.libelles_a_qualifier?.length) sup.push(`${d.libelles_a_qualifier.length} remise(s) à qualifier`);
+      document.getElementById(id).innerHTML =
+        `<span class="etat" style="color:var(--vert)">✓</span>
+         <span>${esc(f.name)} — ${d.type}, ${d.nb} lignes${sup.length ? " · " + sup.join(" · ") : ""}</span>`;
+    } catch (e) {
+      document.getElementById(id).innerHTML =
+        `<span class="etat" style="color:var(--rouge)">✕</span>
+         <span>${esc(f.name)} — ${esc(e.message)}</span>`;
+    }
+  }
+}
+
+/* ---------- libellés de remise ---------- */
+
+async function vueLibelles() {
+  const { libelles } = await api("audit", "libellesAQualifier");
+  $("#vue").innerHTML = `
+    <h2>Remises à qualifier</h2>
+    <p class="sous">Chaque libellé rencontré pour la première fois s'affiche ici.
+      Tant qu'il n'est pas qualifié, ses remises remontent comme écarts.</p>
+    <div class="bloc">${libelles.length ? libelles.map(l => `
+      <div class="ligne"><div class="corps">
+        <div class="titre">${esc(l.libelle)}</div>
+        <div class="detail">Vu du ${jour(l.premiere_vue)} au ${jour(l.derniere_vue)}</div>
+        <div class="actions">
+          <button onclick="qualifier(${l.id},'AUTORISE',0)">Remise normale</button>
+          <button onclick="qualifier(${l.id},'OPERATION',1)">Opération commerciale</button>
+          <button onclick="qualifier(${l.id},'NON_AUTORISE',0)">Non autorisée</button>
+        </div>
+      </div></div>`).join("")
+      : `<div class="vide"><b>Tout est qualifié</b>Aucune nouvelle remise depuis le dernier dépôt.</div>`}
+    </div>`;
+}
+
+async function qualifier(id, statut, neutralise) {
+  await api("audit", "qualifierLibelle", { id, statut, neutralise });
+  aller("libelles");
+}
+
+/* ---------- équipe ---------- */
+
+async function vueEquipe(params) {
+  const restos = E.restaurants.filter(r => E.droits.lecture.includes(r.id));
+  const id = params?.restaurant_id || restos[0]?.id;
+  if (!id) return $("#vue").innerHTML = `<div class="vide"><b>Aucun restaurant</b></div>`;
+  const { salaries } = await api("audit", "salaries", { restaurant_id:id });
+  $("#vue").innerHTML = `
+    <h2>Équipe</h2>
+    <p class="sous">Le poste habituel sert à interpréter le taux d'espèces :
+      un poste au drive encaisse naturellement moins d'espèces qu'une borne.</p>
+    <label class="champ"><span>Restaurant</span>
+      <select onchange="aller('equipe',{restaurant_id:Number(this.value)})">
+      ${restos.map(r => `<option value="${r.id}" ${r.id===id?"selected":""}>${esc(r.nom)}</option>`).join("")}
+      </select></label>
+    <div class="bloc">${salaries.length ? salaries.map(s => `
+      <div class="ligne"><div class="corps">
+        <div class="titre">${esc(s.badge_code)}${s.nom_complet ? " · " + esc(s.nom_complet) : ""}</div>
+        <div class="detail">${esc(s.fonction||"fonction à préciser")} ·
+          ${esc(s.poste_habituel||"poste à préciser")}</div>
+      </div>${s.confiance_mapping === "VALIDE"
+        ? `<span class="etiquette ok">validé</span>`
+        : `<span class="etiquette urgent">à valider</span>`}</div>`).join("")
+      : `<div class="vide"><b>Aucun salarié</b>Les badges apparaîtront après le premier dépôt.</div>`}
+    </div>`;
+}
+
+/* ---------- accès ---------- */
+
+async function vueAdmin() {
+  const { utilisateurs, perimetres } = await api("audit", "utilisateurs");
+  $("#vue").innerHTML = `
+    <h2>Accès</h2>
+    <p class="sous">Un directeur dépose et consulte son restaurant. Seuls la direction
+      et les superviseurs peuvent clore un écart.</p>
+    <div class="bloc">${utilisateurs.map(u => {
+      const n = perimetres.filter(p => p.utilisateur_id === u.id).length;
+      return `<div class="ligne"><div class="corps">
+        <div class="titre">${esc(u.nom)}</div>
+        <div class="detail">${esc(u.role)} · ${n} restaurant(s) ·
+          ${u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté"}</div>
+      </div>${u.actif ? "" : `<span class="etiquette">inactif</span>`}</div>`;
+    }).join("")}</div>
+    <div class="bloc"><div class="zone">
+      <h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>
+      <label class="champ"><span>Nom</span><input id="n-nom"></label>
+      <label class="champ"><span>E-mail</span><input id="n-email" type="email"></label>
+      <label class="champ"><span>Rôle</span><select id="n-role">
+        <option value="DIRECTEUR">Directeur</option>
+        <option value="SUPERVISEUR">Superviseur</option>
+        <option value="CDG">Contrôle de gestion</option>
+        <option value="DG">Direction générale</option></select></label>
+      <label class="champ"><span>Code (6 chiffres minimum si la personne peut clore)</span>
+        <input id="n-pin" inputmode="numeric"></label>
+      <label class="champ"><span>Restaurants</span>
+        <select id="n-restos" multiple size="7" style="width:100%">
+        ${E.restaurants.map(r => `<option value="${r.id}">${esc(r.nom)}</option>`).join("")}
+        </select></label>
+      <div id="err-admin"></div>
+      <button class="principal" onclick="creerUtilisateur()">Créer l'accès</button>
+    </div></div>`;
+}
+
+async function creerUtilisateur() {
+  const role = $("#n-role").value;
+  const clot = role !== "DIRECTEUR";
+  const perimetres = [...$("#n-restos").selectedOptions].map(o => ({
+    restaurant_id:Number(o.value), peut_deposer:true, peut_lire:true, peut_cloturer:clot }));
+  try {
+    await api("audit", "creerUtilisateur", {
+      nom:$("#n-nom").value.trim(), email:$("#n-email").value.trim(),
+      role, pin:$("#n-pin").value.trim(), perimetres });
+    aller("admin");
+  } catch (e) { $("#err-admin").innerHTML = `<div class="alerte erreur">${esc(e.message)}</div>`; }
+}
+
+/* ---------- amorçage ---------- */
+
+const ancienAller = aller;
+aller = (onglet, params) => {
+  if (onglet === "anomalies" && params?.id) { ouvrirAnomalie(params.id).catch(afficherErreur); return; }
+  ancienAller(onglet, params);
+};
+
+E.jeton = localStorage.getItem("jeton-audit");
+if (E.jeton) demarrer().catch(() => seDeconnecter());
+</script>
 </body>
 </html>
