@@ -26,6 +26,7 @@ const KEY_SB = process.env.SUPABASE_SERVICE_KEY;
 const CLE_IA = process.env.ANTHROPIC_API_KEY;
 
 const MIN_SESSIONS = 10;    // en deçà, aucun classement
+const PERIODES = [1, 3, 6];  // mois analysés d'un seul tenant
 const MIN_HISTORIQUE = 3;   // mois nécessaires pour parler de tendance
 const PLANCHER_EUR = 4;     // un écart moyen sous 4 € reste du bruit de comptage
 
@@ -63,6 +64,26 @@ function mediane(liste) {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 const moyenne = l => l.length ? l.reduce((t, x) => t + Number(x || 0), 0) / l.length : null;
+/* Agrégation d'un encadrant sur plusieurs mois.
+   Règle absolue : le manquant par caisse est la SOMME des manquants divisée
+   par la SOMME des comptages. Jamais la moyenne des moyennes mensuelles —
+   les deux diffèrent dès que les volumes varient d'un mois sur l'autre, et
+   la seconde donne un chiffre qui ne correspond à rien de réel. */
+function agreger(lignes) {
+  const somme = champ => lignes.reduce((t, l) => t + (Number(l[champ]) || 0), 0);
+  const sessions = somme("sessions");
+  return {
+    sessions,
+    sessions_deficit: somme("sessions_deficit"),
+    ecart_total: somme("ecart_total"),
+    sessions_fermeture: somme("sessions_fermeture"),
+    ecart_fermeture: somme("ecart_fermeture"),
+    ecart_par_session: sessions ? somme("ecart_total") / sessions : null,
+    part_deficit: sessions ? somme("sessions_deficit") / sessions * 100 : null,
+    mois_presents: lignes.length
+  };
+}
+
 function finDuMois(mois) {
   const an = Number(mois.slice(0, 4)), m = Number(mois.slice(5, 7));
   return `${mois.slice(0, 7)}-${String(new Date(an, m, 0).getDate()).padStart(2, "0")}`;
@@ -77,66 +98,99 @@ function raisonner(e, contexte) {
   const traits = [];
   let points = 0;
   const parSession = Number(e.ecart_par_session) || 0;
-  const ajouter = (sens, texte, poids) => {
-    traits.push({ sens, texte }); points += (poids || 0);
-  };
+  const P = contexte.periode;
+  const surLaPeriode = P === 1 ? "ce mois-ci" : `sur les ${P} mois`;
+  const ajouter = (sens, texte, poids) => { traits.push({ sens, texte }); points += (poids || 0); };
 
   // Volume : sans lui, rien n'est comparable.
   if (Number(e.sessions) < MIN_SESSIONS)
     return { feu: "GRIS", points: 0, traits: [{ sens: "neutre",
-      texte: `${e.sessions} caisse(s) validée(s) seulement ce mois-ci : c'est trop peu pour `
+      texte: `${e.sessions} caisse(s) validée(s) ${surLaPeriode} : c'est trop peu pour `
         + `comparer quoi que ce soit. Aucun classement n'est rendu.` }],
       verdict: `Pas assez de comptages validés pour se prononcer.` };
 
-  // Bruit de comptage : sous 4 € de moyenne, on ne va pas plus loin.
   if (parSession > -PLANCHER_EUR)
     return { feu: "VERT", points: 0, traits: [{ sens: "faveur",
       texte: `${eur(parSession)} de manquant moyen par caisse sur ${e.sessions} comptages : `
         + `c'est le bruit normal d'un comptage manuel.` }],
       verdict: `Rien qui sorte du bruit de comptage habituel.` };
 
-  // 1. Comparaison aux collègues du même mois.
+  // 1. Comparaison aux collègues, sur la même période.
   const med = contexte.mediane_pairs;
   if (med !== null && Math.abs(med) > 0.5) {
     const rapport = Math.abs(parSession) / Math.abs(med);
     if (rapport >= 2) ajouter("charge",
-      `${eur(parSession)} de manquant par caisse, contre ${eur(med)} pour la médiane des `
-      + `${contexte.nb_pairs} encadrants du restaurant ce mois-ci : plus du double.`, 2);
+      `${eur(parSession)} de manquant par caisse ${surLaPeriode}, contre ${eur(med)} pour la `
+      + `médiane des ${contexte.nb_pairs} encadrants du restaurant : plus du double.`, 2);
     else if (rapport >= 1.3) ajouter("charge",
       `${eur(parSession)} par caisse contre ${eur(med)} pour la médiane des `
-      + `${contexte.nb_pairs} encadrants du restaurant : au-dessus, sans s'en écarter franchement.`, 1);
+      + `${contexte.nb_pairs} encadrants : au-dessus, sans s'en écarter franchement.`, 1);
     else if (rapport <= 0.8) ajouter("faveur",
       `${eur(parSession)} par caisse, en dessous de la médiane du restaurant (${eur(med)}).`, -1);
     else ajouter("neutre",
-      `${eur(parSession)} par caisse, dans la moyenne des encadrants du restaurant (${eur(med)}).`, 0);
+      `${eur(parSession)} par caisse, dans la moyenne des encadrants (${eur(med)}).`, 0);
   }
 
-  // 2. Comparaison à son propre historique — la référence la plus solide.
-  const hist = (e.historique || []).filter(h => h.mois < contexte.mois
+  // 2. Comparaison à son propre passé, ANTÉRIEUR à la période analysée.
+  //    Compter les mois de la période dans la référence reviendrait à
+  //    comparer une valeur à elle-même.
+  const avant = (e.historique || []).filter(h => h.mois < contexte.debut
     && Number(h.sessions) >= MIN_SESSIONS);
-  const base = mediane(hist.slice(-12).map(h => h.ecart_par_session));
-  if (hist.length < MIN_HISTORIQUE) {
-    ajouter("neutre",
-      `Seulement ${hist.length} mois d'historique exploitable : impossible de dire si c'est `
-      + `habituel chez cette personne ou si le mois est inhabituel.`, 0);
+  const base = mediane(avant.map(h => h.ecart_par_session));
+  if (avant.length < MIN_HISTORIQUE) {
+    ajouter("neutre", avant.length === 0
+      ? `Toute la base disponible est comprise dans la période analysée : il n'y a aucun `
+        + `passé antérieur auquel comparer ces ${P} mois.`
+      : `Seulement ${avant.length} mois exploitable(s) avant la période : trop peu pour dire `
+        + `si ce niveau est habituel chez cette personne.`, 0);
   } else if (base !== null && Math.abs(base) > 0.5) {
     const r = Math.abs(parSession) / Math.abs(base);
     if (r >= 2) ajouter("charge",
-      `Sur ses ${hist.length} mois précédents, cette personne est habituellement à ${eur(base)} `
-      + `par caisse. Ce mois-ci elle est à ${eur(parSession)}, soit plus du double de son propre `
-      + `niveau. C'est la comparaison la plus parlante : elle ne dépend ni du poste ni du site.`, 3);
+      `Avant cette période, cette personne était à ${eur(base)} par caisse sur ${avant.length} `
+      + `mois. Elle est à ${eur(parSession)} ${surLaPeriode}, plus du double de son propre `
+      + `niveau. C'est la comparaison la plus solide : elle ne dépend ni du poste ni du site.`, 3);
     else if (r >= 1.4) ajouter("charge",
-      `Habituellement à ${eur(base)} par caisse sur ses ${hist.length} mois précédents, elle est `
-      + `à ${eur(parSession)} ce mois-ci : en nette hausse par rapport à elle-même.`, 2);
+      `Auparavant à ${eur(base)} par caisse sur ${avant.length} mois, elle est à `
+      + `${eur(parSession)} ${surLaPeriode} : en nette hausse par rapport à elle-même.`, 2);
     else if (r <= 0.7) ajouter("faveur",
-      `Habituellement à ${eur(base)} par caisse, elle est à ${eur(parSession)} ce mois-ci : `
+      `Auparavant à ${eur(base)} par caisse, elle est à ${eur(parSession)} ${surLaPeriode} : `
       + `en amélioration par rapport à son propre niveau.`, -2);
     else ajouter("neutre",
-      `${eur(parSession)} ce mois-ci pour ${eur(base)} habituellement sur ses ${hist.length} mois `
-      + `précédents : c'est son niveau ordinaire, pas un décrochage.`, 0);
+      `${eur(parSession)} ${surLaPeriode} pour ${eur(base)} auparavant : c'est son niveau `
+      + `ordinaire, pas un décrochage.`, 0);
   }
 
-  // 3. Dispersion des faits : concentré désigne une personne ou un poste,
+  // 3. Répétition. Un mauvais mois n'est rien, trois mauvais mois d'affilée
+  //    sont un fait. Ne se calcule évidemment que sur plusieurs mois.
+  if (P > 1 && e.mois_au_dessus !== null && e.mois_presents >= 2) {
+    const a = e.mois_au_dessus, t = e.mois_presents;
+    if (a === t && t >= 3) ajouter("charge",
+      `Au-dessus de la médiane du restaurant les ${t} mois de la période, sans exception.`, 2);
+    else if (a >= Math.ceil(t * 0.75)) ajouter("charge",
+      `Au-dessus de la médiane du restaurant ${a} mois sur ${t}.`, 1);
+    else if (a <= Math.floor(t * 0.25)) ajouter("faveur",
+      `Au-dessus de la médiane du restaurant seulement ${a} mois sur ${t} : le niveau `
+      + `d'ensemble tient à un ou deux mois, pas à une habitude.`, -1);
+    else ajouter("neutre",
+      `Au-dessus de la médiane du restaurant ${a} mois sur ${t} : rien de régulier.`, 0);
+  }
+
+  // 4. Sens de l'évolution à l'intérieur de la période. Un cumul élevé mais
+  //    en amélioration ne se traite pas comme un cumul qui s'aggrave.
+  if (P > 1 && e.evolution && e.evolution.avant !== null && e.evolution.apres !== null) {
+    const av = Math.abs(e.evolution.avant), ap = Math.abs(e.evolution.apres);
+    if (av > 0.5 && ap >= av * 1.4) ajouter("charge",
+      `À l'intérieur de la période, le manquant par caisse passe de ${eur(e.evolution.avant)} `
+      + `à ${eur(e.evolution.apres)} : la situation se dégrade.`, 2);
+    else if (ap > 0.5 && av >= ap * 1.4) ajouter("faveur",
+      `À l'intérieur de la période, le manquant par caisse passe de ${eur(e.evolution.avant)} `
+      + `à ${eur(e.evolution.apres)} : la situation s'améliore.`, -2);
+    else ajouter("neutre",
+      `Niveau stable sur toute la période, de ${eur(e.evolution.avant)} à `
+      + `${eur(e.evolution.apres)} par caisse.`, 0);
+  }
+
+  // 5. Dispersion des faits : concentré désigne une personne ou un poste,
   //    éparpillé désigne une procédure.
   const f = e.faits || [];
   if (f.length >= 4) {
@@ -149,24 +203,27 @@ function raisonner(e, contexte) {
       `Les ${f.length} comptages en manque ne concernent que ${equipiers.length} équipier(s) : `
       + `${equipiers.join(", ")}. Cette concentration mérite d'être regardée.`, 2);
     else if (equipiers.length >= 4) ajouter("faveur",
-      `Les ${f.length} comptages en manque concernent ${equipiers.length} équipiers différents sur `
-      + `${caisses.length} caisses : rien ne se concentre. Cela ressemble davantage à une procédure `
-      + `de comptage relâchée sur ces shifts qu'à un problème propre à cette personne.`, -2);
+      `Les ${f.length} comptages en manque concernent ${equipiers.length} équipiers différents `
+      + `sur ${caisses.length} caisses : rien ne se concentre. Cela ressemble davantage à une `
+      + `procédure de comptage relâchée qu'à un problème propre à cette personne.`, -2);
   }
 
-  // 4. Fermetures : le créneau le moins contrôlé.
+  // 6. Fermetures : le créneau le moins contrôlé.
   const ferm = Math.abs(Number(e.ecart_fermeture) || 0);
   const tot = Math.abs(Number(e.ecart_total) || 0);
   if (tot > 0 && Number(e.sessions_fermeture) >= 5 && ferm / tot >= 0.7) ajouter("charge",
     `${Math.round(ferm / tot * 100)} % du manquant se produit en fermeture, sur `
     + `${e.sessions_fermeture} clôtures : c'est le créneau où les contrôles sont les plus rares.`, 1);
 
-  const feu = points >= 3 ? "ROUGE" : points >= 1 ? "ORANGE" : "VERT";
+  // Le seuil monte avec la durée : sur six mois il y a plus de règles
+  // applicables, donc plus d'occasions d'accumuler des points.
+  const seuilRouge = P === 1 ? 3 : 4;
+  const feu = points >= seuilRouge ? "ROUGE" : points >= 1 ? "ORANGE" : "VERT";
   const verdict = feu === "ROUGE"
     ? `Plusieurs signaux convergent. À vérifier concrètement, sans présumer de la cause.`
     : feu === "ORANGE"
-      ? `Un signal ressort, les autres non. À surveiller le mois prochain.`
-      : `Rien qui sorte de l'ordinaire, ni par rapport aux collègues ni par rapport à ses propres mois.`;
+      ? `Un signal ressort, les autres non. À surveiller.`
+      : `Rien qui sorte de l'ordinaire, ni par rapport aux collègues ni par rapport à son passé.`;
   return { feu, points, traits, verdict };
 }
 
@@ -174,9 +231,10 @@ const ORDRE_FEU = { ROUGE: 0, ORANGE: 1, VERT: 2, GRIS: 3 };
 
 /* ---------- synthèse ---------- */
 
-async function synthese({ restaurant_id, mois }, ctx) {
+async function synthese({ restaurant_id, mois, periode }, ctx) {
   if (!ctx.lecture.includes(Number(restaurant_id))) return { erreur: "Hors périmètre" };
   const rid = Number(restaurant_id);
+  const P = PERIODES.includes(Number(periode)) ? Number(periode) : 1;
 
   const [suivi, ids, resto] = await Promise.all([
     sb(`v_encadrants_mois?restaurant_id=eq.${rid}&select=*&order=mois.desc`),
@@ -185,24 +243,59 @@ async function synthese({ restaurant_id, mois }, ctx) {
   ]);
   const moisDispo = [...new Set(suivi.map(l => l.mois))].sort().reverse();
   const m = mois || moisDispo[0] || null;
-  if (!m) return { mois: null, mois_disponibles: [], encadrants: [],
-                   restaurant: resto[0] || null, resume: null };
+  if (!m) return { mois: null, periode: P, mois_disponibles: [], encadrants: [],
+                   restaurant: resto[0] || null, resume: null, fenetre: [] };
+
+  // La fenêtre est faite des mois RÉELLEMENT disponibles jusqu'au mois choisi :
+  // annoncer « 6 mois » alors que la base n'en contient que quatre serait faux.
+  const fenetre = moisDispo.filter(x => x <= m).slice(0, P).sort();
+  const debut = fenetre[0], finM = fenetre[fenetre.length - 1];
 
   const noms = {};
   ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
 
   const [sessions, parCaisse] = await Promise.all([
-    sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&date_fiscale=gte.${m.slice(0,7)}-01`
-      + `&date_fiscale=lte.${finDuMois(m)}&select=*&order=ecart_especes.asc`),
-    sb(`v_caisses_ecarts?restaurant_id=eq.${rid}&mois=eq.${m}&select=*`)
+    sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&date_fiscale=gte.${debut.slice(0,7)}-01`
+      + `&date_fiscale=lte.${finDuMois(finM)}&select=*&order=ecart_especes.asc`),
+    sb(`v_caisses_ecarts?restaurant_id=eq.${rid}&mois=in.(${fenetre.join(",")})&select=*`)
   ]);
 
-  const duMois = suivi.filter(l => l.mois === m && !ctx.masques.includes(l.responsable));
-  const eligibles = duMois.filter(l => Number(l.sessions) >= MIN_SESSIONS);
+  const dansFenetre = suivi.filter(l => fenetre.includes(l.mois)
+    && !ctx.masques.includes(l.responsable));
+  const responsables = [...new Set(dansFenetre.map(l => l.responsable))];
+
+  // Médiane du restaurant, mois par mois : sert à compter les mois passés
+  // au-dessus, ce qu'un cumul ne peut pas dire.
+  const medianeDuMois = {};
+  fenetre.forEach(mm => {
+    const lignes = suivi.filter(l => l.mois === mm && Number(l.sessions) >= MIN_SESSIONS);
+    medianeDuMois[mm] = mediane(lignes.map(l => l.ecart_par_session));
+  });
+
+  const agregats = responsables.map(r => {
+    const lignes = dansFenetre.filter(l => l.responsable === r);
+    const a = agreger(lignes);
+    const auDessus = lignes.filter(l => {
+      const md = medianeDuMois[l.mois];
+      return md !== null && Number(l.ecart_par_session) < md;   // plus négatif = pire
+    }).length;
+    // évolution interne : première moitié de la fenêtre contre seconde
+    let evolution = null;
+    if (P > 1 && lignes.length >= 2) {
+      const coupe = Math.floor(fenetre.length / 2);
+      const av = agreger(lignes.filter(l => fenetre.indexOf(l.mois) < coupe));
+      const ap = agreger(lignes.filter(l => fenetre.indexOf(l.mois) >= coupe));
+      evolution = { avant: av.ecart_par_session, apres: ap.ecart_par_session };
+    }
+    return { responsable: r, ...a, mois_au_dessus: auDessus, evolution,
+             lignes_mois: lignes.length };
+  });
+
+  const eligibles = agregats.filter(a => Number(a.sessions) >= MIN_SESSIONS);
   const contexte = {
-    mois: m,
-    mediane_pairs: mediane(eligibles.map(l => l.ecart_par_session)),
-    part_deficit_moyenne: moyenne(eligibles.map(l => l.part_deficit)),
+    debut, periode: P,
+    mediane_pairs: mediane(eligibles.map(a => a.ecart_par_session)),
+    part_deficit_moyenne: moyenne(eligibles.map(a => a.part_deficit)),
     nb_pairs: eligibles.length
   };
 
@@ -210,43 +303,57 @@ async function synthese({ restaurant_id, mois }, ctx) {
     && !ctx.masques.includes(s.badge_code) && !ctx.masques.includes(s.responsable));
   const compensees = sessions.filter(s => s.compense);
 
-  const encadrants = duMois.map(l => {
-    const faits = nonCompensees.filter(s => s.responsable === l.responsable).map(s => ({
+  const encadrants = agregats.map(a => {
+    const faits = nonCompensees.filter(s => s.responsable === a.responsable).map(s => ({
       date: s.date_fiscale, caisse: s.caisse, shift: s.shift,
       equipier: noms[s.badge_code] || s.badge_code,
-      ecart: s.ecart_especes, echeance_camera: s.echeance_camera,
-      nb_remise: s.nb_remise, nb_annulation: s.nb_annulation }));
-    const historique = suivi.filter(h => h.responsable === l.responsable)
-      .sort((a, b) => a.mois < b.mois ? -1 : 1)
+      ecart: s.ecart_especes, echeance_camera: s.echeance_camera }));
+    const historique = suivi.filter(h => h.responsable === a.responsable)
+      .sort((x, y) => x.mois < y.mois ? -1 : 1)
       .map(h => ({ mois: h.mois, sessions: h.sessions, part_deficit: h.part_deficit,
-                   ecart_par_session: h.ecart_par_session, ecart_total: h.ecart_total }));
-    const base = { code: l.responsable, nom: l.nom_affiche || noms[l.responsable] || l.responsable,
-      sessions: l.sessions, sessions_deficit: l.sessions_deficit, part_deficit: l.part_deficit,
-      ecart_total: l.ecart_total, ecart_par_session: l.ecart_par_session,
-      sessions_fermeture: l.sessions_fermeture, ecart_fermeture: l.ecart_fermeture,
-      mediane_pairs: contexte.mediane_pairs, part_deficit_moyenne: contexte.part_deficit_moyenne,
+                   ecart_par_session: h.ecart_par_session, ecart_total: h.ecart_total,
+                   dans_periode: fenetre.includes(h.mois) }));
+    const ligne = dansFenetre.find(l => l.responsable === a.responsable) || {};
+    const base = { code: a.responsable,
+      nom: ligne.nom_affiche || noms[a.responsable] || a.responsable,
+      ...a, mediane_pairs: contexte.mediane_pairs,
+      part_deficit_moyenne: contexte.part_deficit_moyenne,
       historique, faits };
     const r = raisonner(base, contexte);
-    // repère de lecture immédiat : le mois précédent du même encadrant
-    const precedent = historique.filter(h => h.mois < m).slice(-1)[0] || null;
+    const precedent = historique.filter(h => h.mois < debut).slice(-1)[0] || null;
     return { ...base, feu: r.feu, verdict: r.verdict, traits: r.traits, points: r.points,
              precedent, faits: faits.slice(0, 15), nb_faits: faits.length };
-  }).sort((a, b) => ORDRE_FEU[a.feu] - ORDRE_FEU[b.feu]
-                 || (Number(a.ecart_par_session) || 0) - (Number(b.ecart_par_session) || 0));
+  }).sort((x, y) => ORDRE_FEU[x.feu] - ORDRE_FEU[y.feu]
+                 || (Number(x.ecart_par_session) || 0) - (Number(y.ecart_par_session) || 0));
 
-  const caissePire = parCaisse.slice().sort((a, b) =>
-    (Number(b.taux_lourdes) || 0) - (Number(a.taux_lourdes) || 0))[0] || null;
+  // Une caisse ne se juge que sur son TAUX de comptages en manque : le cumul
+  // désigne toujours la caisse la plus utilisée.
+  const caisses = {};
+  parCaisse.forEach(c => {
+    const e = caisses[c.caisse] || (caisses[c.caisse] = { caisse: c.caisse, sessions: 0,
+      lourdes: 0, ecart_cumule: 0 });
+    e.sessions += Number(c.sessions || 0);
+    e.lourdes += Number(c.lourdes || 0);
+    e.ecart_cumule += Number(c.ecart_cumule || 0);
+  });
+  const listeCaisses = Object.values(caisses).map(c => ({ ...c,
+    taux_lourdes: c.sessions ? Math.round(c.lourdes / c.sessions * 1000) / 10 : 0,
+    ecart_moyen: c.sessions ? c.ecart_cumule / c.sessions : null }))
+    .sort((a, b) => b.taux_lourdes - a.taux_lourdes);
+  const pire = listeCaisses[0] || null;
 
   return {
-    mois: m, mois_disponibles: moisDispo, restaurant: resto[0] || null, noms,
+    mois: m, periode: P, fenetre, mois_disponibles: moisDispo,
+    restaurant: resto[0] || null, noms,
     resume: {
-      sessions: parCaisse.reduce((t, c) => t + Number(c.sessions || 0), 0),
+      sessions: listeCaisses.reduce((t, c) => t + c.sessions, 0),
       manquants: nonCompensees.length,
       montant_manquants: nonCompensees.reduce((t, s) => t + Number(s.ecart_especes || 0), 0),
       compensees: compensees.length,
       mediane_pairs: contexte.mediane_pairs,
       part_deficit_moyenne: contexte.part_deficit_moyenne,
-      caisse_a_regarder: caissePire && Number(caissePire.taux_lourdes) >= 10 ? caissePire : null
+      caisses: listeCaisses,
+      caisse_a_regarder: pire && pire.taux_lourdes >= 10 && pire.sessions >= 20 ? pire : null
     },
     encadrants
   };
@@ -294,13 +401,14 @@ function explicationDeSecours(d) {
   return p.join(" ");
 }
 
-async function expliquer({ restaurant_id, code, mois }, ctx) {
-  const d = await synthese({ restaurant_id, mois }, ctx);
+async function expliquer({ restaurant_id, code, mois, periode }, ctx) {
+  const d = await synthese({ restaurant_id, mois, periode }, ctx);
   if (d.erreur) return d;
   const e = (d.encadrants || []).find(x => x.code === code);
   if (!e) return { erreur: "Encadrant introuvable sur ce mois." };
 
-  const dossier = { ...e, mois: d.mois, restaurant: d.restaurant && d.restaurant.nom,
+  const dossier = { ...e, mois: d.mois, periode_analysee: d.fenetre.map(moisLisible),
+                    restaurant: d.restaurant && d.restaurant.nom,
                     contexte_restaurant: d.resume };
   if (!CLE_IA) return { texte: explicationDeSecours(dossier), source: "regles" };
 
