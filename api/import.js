@@ -456,6 +456,24 @@ const actions = {
     if (!ctx.depot.includes(Number(restaurant_id)))
       return { erreur: "Hors périmètre" };
     return { anomalies: await genererAnomalies(Number(restaurant_id), debut, fin) };
+  },
+
+  // Agrégation mensuelle et moteur de tendances. Ces fonctions SQL existaient
+  // depuis le début mais rien ne les appelait : la table `tendances` restait
+  // vide et l'historique ne servait à rien. Elles se rejouent sans risque,
+  // chaque calcul écrasant le précédent sur la même clé.
+  async cloturer({ restaurant_id, mois }, ctx) {
+    if (!ctx.depot.includes(Number(restaurant_id)))
+      return { erreur: "Hors périmètre" };
+    const cible = String(mois).slice(0, 7) + "-01";
+    try {
+      await rpc("cloturer_mois", { p_restaurant: Number(restaurant_id), p_mois: cible });
+      return { ok: true, mois: cible };
+    } catch (e) {
+      // un mois sans CA journalier ou sans flux caissiers ne peut pas être
+      // clôturé : ce n'est pas une erreur de l'utilisateur, on le dit
+      return { ok: false, mois: cible, motif: String(e.message || e) };
+    }
   }
 };
 
