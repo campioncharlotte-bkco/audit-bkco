@@ -161,7 +161,10 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
 /* ---------- libellés de remise appris en marchant ---------- */
 
 async function enregistrerLibelles(donnees, date) {
-  const vus = [...new Set(donnees.map(d => d.libelle_remise).filter(Boolean))];
+  // « 2 remises », « 3 remises » sont des regroupements du rapport,
+  // pas des libellés paramétrés : ils ne remontent jamais
+  const vus = [...new Set(donnees.map(d => d.libelle_remise)
+    .filter(l => l && !/^\d+\s+remises?$/i.test(l)))];
   if (!vus.length) return [];
   const connus = await sb(`libelles_remise?select=libelle,statut`);
   const set = new Set(connus.map(c => c.libelle));
