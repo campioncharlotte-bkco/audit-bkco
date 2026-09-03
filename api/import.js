@@ -87,7 +87,7 @@ function homogeneiser(lignes) {
 // Les envois séquentiels faisaient dépasser le temps limite de la fonction
 // sur les gros rapports : 4 000 lignes de remises, c'est 20 allers-retours.
 // Quatre en parallèle divisent le temps par trois sans surcharger Supabase.
-const parLots = async (table, lignes, taille = 500, front = 4) => {
+const parLots = async (table, lignes, taille = 300, front = 3) => {
   const plates = homogeneiser(lignes);
   const lots = [];
   for (let i = 0; i < plates.length; i += taille) lots.push(plates.slice(i, i + taille));
@@ -212,7 +212,10 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
 
   // À partir d'ici, toute erreur invalide le dépôt : la ligne d'import est
   // marquée rejetée pour que le fichier reste redéposable.
+  // Chaque phase est nommée : sans cela, un 500 ne dit pas où il s'est produit.
+  let etape = "préparation";
   try {
+    etape = "remplacement du dépôt précédent";
     const remplaces = await remplacerAncienDepot(
       Number(restaurant_id), codeRapport, debut, fin, imp.id, p.table);
 
@@ -222,6 +225,7 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
     // Les flux caissiers (1) et (2) alimentent la même ligne : (1) apporte
     // corrections/annulations/diff. de caisse, (2) les modes de paiement.
     const mois = debut.slice(0, 8) + "01";
+    etape = `insertion des ${lignes.length} lignes`;
 
     if (p.table === "flux_caissiers" || p.table === "tickets_non_payants") {
       // les rapports cumulés se terminent par une ligne de totaux, sans badge
@@ -247,6 +251,7 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
       await parLots(p.table, lignes);
     }
 
+    etape = "enregistrement des libellés de remise";
     const nouveaux = p.table === "remises_lignes"
       ? await enregistrerLibelles(p.donnees, debut) : [];
 
@@ -256,8 +261,9 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
              periode: [debut, fin], libelles_a_qualifier: nouveaux,
              analyse_a_lancer: true };
   } catch (e) {
-    await marquerRejete(imp.id, e.message || e, p.table);
-    return { erreur: "Dépôt interrompu, rien n'a été conservé : " + String(e.message || e) };
+    await marquerRejete(imp.id, `${etape} — ${e.message || e}`, p.table);
+    return { erreur: `Dépôt interrompu à l'étape « ${etape} », rien n'a été conservé. `
+      + String(e.message || e) };
   }
 }
 
@@ -277,8 +283,15 @@ async function enregistrerLibelles(donnees, date) {
       body: JSON.stringify(nouveaux.map(l => ({
         libelle: l, famille: (l.match(/^\[([^\]]+)\]/) || [, "AUTRE"])[1],
         premiere_vue: date, derniere_vue: date }))) });
-  await sb(`libelles_remise?libelle=in.(${vus.map(v => `"${v.replace(/"/g, '')}"`).join(",")})`,
-    { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ derniere_vue: date }) });
+  // Une centaine de libellés dans une seule URL faisait plusieurs kilooctets
+  // et se faisait refuser par la passerelle : on découpe par paquets de 20.
+  for (let i = 0; i < vus.length; i += 20) {
+    const paquet = vus.slice(i, i + 20)
+      .map(v => `"${String(v).replace(/["(),]/g, " ")}"`).join(",");
+    await sb(`libelles_remise?libelle=in.(${encodeURI(paquet)})`,
+      { method: "PATCH", prefer: "return=minimal",
+        body: JSON.stringify({ derniere_vue: date }) });
+  }
   return nouveaux;
 }
 
