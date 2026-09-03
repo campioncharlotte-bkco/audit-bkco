@@ -130,7 +130,12 @@ const actions = {
     const lignes = await sb(q);
     // masquage de la chaîne hiérarchique de l'utilisateur
     const visibles = lignes.filter(a => !a.badge_code || !ctx.masques.includes(a.badge_code));
-    return { anomalies: visibles, masquees: lignes.length - visibles.length };
+    // les rapports mélangent badges et noms complets : on renvoie de quoi
+    // afficher un nom lisible plutôt qu'un trigramme
+    const ids = await sb(`v_identites?restaurant_id=in.(${restos.join(",")})&select=*`);
+    const noms = {};
+    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
+    return { anomalies: visibles, masquees: lignes.length - visibles.length, noms };
   },
 
   async anomalie({ id }, ctx) {
@@ -212,6 +217,33 @@ const actions = {
       }
     }
     return { ok: true, refermees };
+  },
+
+  // Suivi des encadrants : ce qu'ils valident, rapporté à leur exposition.
+  // Le montant brut favorise mécaniquement ceux qui valident le plus de
+  // caisses, donc on renvoie aussi la part de sessions déficitaires.
+  async encadrants({ restaurant_id, mois }, ctx) {
+    const restos = restaurant_id && dansPerimetre(ctx, restaurant_id)
+      ? [Number(restaurant_id)] : ctx.lecture;
+    if (!restos.length) return { encadrants: [] };
+    const [suivi, ecarts] = await Promise.all([
+      sb(`v_encadrants_mois?restaurant_id=in.(${restos.join(",")})&select=*&order=mois.desc`),
+      sb(`v_encadrants_ecarts?restaurant_id=in.(${restos.join(",")})&select=*`)
+    ]);
+    const moisRetenu = mois || (suivi[0] && suivi[0].mois);
+    const courant = suivi.filter(l => l.mois === moisRetenu && !ctx.masques.includes(l.responsable));
+    return {
+      mois: moisRetenu,
+      mois_disponibles: [...new Set(suivi.map(l => l.mois))].sort().reverse(),
+      encadrants: courant.map(l => ({
+        ...l,
+        historique: suivi.filter(h => h.responsable === l.responsable
+                                   && h.restaurant_id === l.restaurant_id)
+                         .sort((x, y) => x.mois < y.mois ? -1 : 1),
+        ecarts: ecarts.find(e => e.responsable === l.responsable
+                              && e.restaurant_id === l.restaurant_id) || null
+      })).sort((x, y) => (x.ecart_par_session ?? 0) - (y.ecart_par_session ?? 0))
+    };
   },
 
   async ficheSalarie({ restaurant_id, badge_code }, ctx) {
