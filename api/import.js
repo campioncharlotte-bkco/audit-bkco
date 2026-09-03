@@ -84,11 +84,16 @@ function homogeneiser(lignes) {
   });
 }
 
-const parLots = async (table, lignes, taille = 200) => {
+// Les envois séquentiels faisaient dépasser le temps limite de la fonction
+// sur les gros rapports : 4 000 lignes de remises, c'est 20 allers-retours.
+// Quatre en parallèle divisent le temps par trois sans surcharger Supabase.
+const parLots = async (table, lignes, taille = 500, front = 4) => {
   const plates = homogeneiser(lignes);
-  for (let i = 0; i < plates.length; i += taille)
-    await sb(table, { method: "POST", prefer: "return=minimal",
-                      body: JSON.stringify(plates.slice(i, i + taille)) });
+  const lots = [];
+  for (let i = 0; i < plates.length; i += taille) lots.push(plates.slice(i, i + taille));
+  for (let i = 0; i < lots.length; i += front)
+    await Promise.all(lots.slice(i, i + front).map(l =>
+      sb(table, { method: "POST", prefer: "return=minimal", body: JSON.stringify(l) })));
 };
 // Les rapports nomment tantôt par badge (BIENBEN), tantôt en clair
 // (BIENAIME Benjamin) : on ramène tout au badge, construit en 4 lettres
@@ -244,10 +249,12 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
 
     const nouveaux = p.table === "remises_lignes"
       ? await enregistrerLibelles(p.donnees, debut) : [];
-    const anomalies = await genererAnomalies(Number(restaurant_id), debut, fin);
 
+    // La détection tourne dans un appel séparé : enchaînée ici, elle faisait
+    // dépasser le temps limite de la fonction sur les mois volumineux.
     return { ok: true, import_id: imp.id, type: p.type, nb: p.nb, remplaces,
-             periode: [debut, fin], libelles_a_qualifier: nouveaux, anomalies };
+             periode: [debut, fin], libelles_a_qualifier: nouveaux,
+             analyse_a_lancer: true };
   } catch (e) {
     await marquerRejete(imp.id, e.message || e, p.table);
     return { erreur: "Dépôt interrompu, rien n'a été conservé : " + String(e.message || e) };
@@ -419,6 +426,16 @@ async function genererAnomalies(restaurant_id, debut, fin) {
 
 /* ---------- routage ---------- */
 
+const actions = {
+  deposer,
+  // Lancé par le navigateur une fois les fichiers du mois déposés.
+  async analyser({ restaurant_id, debut, fin }, ctx) {
+    if (!ctx.depot.includes(Number(restaurant_id)))
+      return { erreur: "Hors périmètre" };
+    return { anomalies: await genererAnomalies(Number(restaurant_id), debut, fin) };
+  }
+};
+
 module.exports = async (req, res) => {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ erreur: "POST attendu" });
@@ -430,7 +447,8 @@ module.exports = async (req, res) => {
     if (!u || !u.actif) return res.status(401).json({ erreur: "Utilisateur inactif" });
     const perim = await rpc("perimetre_utilisateur", { uid: session.uid });
     const ctx = { ...u, depot: perim.filter(p => p.peut_deposer).map(p => p.restaurant_id) };
-    return res.status(200).json(await deposer(corps, ctx));
+    const traiter = actions[corps.action] || deposer;
+    return res.status(200).json(await traiter(corps, ctx));
   } catch (e) {
     return res.status(500).json({ erreur: String(e.message || e) });
   }
