@@ -305,8 +305,8 @@ async function vueEcarts(params) {
      règlement ne reprenne la différence. Un seul dénominateur, donc aucun
      total qui ne corresponde pas au détail affiché juste en dessous. */
   const faits = (d.sessions || []).slice().sort(function(a,b){
-    return Number(a.ecart_especes) - Number(b.ecart_especes); });
-  const total = faits.reduce((t,s) => t + Number(s.ecart_especes || 0), 0);
+    return Number(a.ecart_mesure) - Number(b.ecart_mesure); });
+  const total = faits.reduce((t,s) => t + Number(s.ecart_mesure || 0), 0);
   const urgents = faits.filter(s => { const r = resteCamera(s.echeance_camera);
                                       return r !== null && r >= 0; });
   const pire = faits[0];
@@ -315,16 +315,17 @@ async function vueEcarts(params) {
   faits.forEach(function(s){
     const k = s.responsable || "—";
     const g = parPersonne[k] || (parPersonne[k] = { qui:k, n:0, total:0, pire:0, jours:{} });
-    g.n++; g.total += Number(s.ecart_especes || 0);
-    g.pire = Math.min(g.pire, Number(s.ecart_especes || 0));
+    g.n++; g.total += Number(s.ecart_mesure || 0);
+    g.pire = Math.min(g.pire, Number(s.ecart_mesure || 0));
     g.jours[String(s.date_fiscale).slice(0,10)] = 1;
   });
   const personnes = Object.values(parPersonne).sort((a,b) => b.n - a.n || a.total - b.total);
 
   $("#vue").innerHTML =
     '<h2>Écarts de caisse</h2>' +
-    '<p class="sous">Les comptages qui manquent de plus de 20 € en espèces, sans qu\'un autre ' +
-      'mode de règlement ne reprenne la différence. ' + moisLisible(d.mois) + '.</p>' +
+    '<p class="sous">Les comptages dont l\'écart <b>total</b> dépasse 20 €, tous modes de ' +
+      'règlement confondus. Un manquant en espèces repris par un autre mode est une erreur ' +
+      'de déclaration, pas une perte : il est écarté. ' + moisLisible(d.mois) + '.</p>' +
     selecteurs +
     '<div class="compteurs">' +
       '<div><b>' + faits.length + '</b><span>comptages en manque</span></div>' +
@@ -368,10 +369,11 @@ async function vueEcarts(params) {
     ((d.compensees || []).length ? '<div class="bloc">' +
       '<button class="ligne" onclick="basculer(\'compensees\')">' +
         '<div class="corps"><div class="titre">' + d.compensees.length +
-          ' écart(s) repris par la carte ou le TPE</div>' +
-        '<div class="detail">Le comptage espèces manque, mais un autre mode de règlement ' +
-          'reprend exactement la différence : encaissement saisi dans la mauvaise case, ' +
-          'pas d\'argent disparu.</div></div>' +
+          ' écart(s) espèces expliqués par la déclaration</div>' +
+        '<div class="detail">Les espèces manquent, mais le total de la caisse est à ' +
+          'l\'équilibre : un règlement a été déclaré sous la mauvaise ligne, souvent un ' +
+          'titre restaurant. C\'est une correction de procédure, pas de l\'argent disparu.' +
+          '</div></div>' +
         '<span class="etiquette ok">sans suite</span></button>' +
       '<div id="compensees" style="display:none">' +
         d.compensees.map(ligneFait).join("") + '</div></div>' : "");
@@ -390,7 +392,8 @@ function ligneFait(s) {
         (s.service_lecture ? ' · <span class="etiquette ' + MOT_SERVICE[s.service_lecture][0] +
           '">' + MOT_SERVICE[s.service_lecture][1] + '</span>' : '') + '</div></div>' +
       '<div style="text-align:right"><div class="montant num negatif">' +
-        eur(s.ecart_especes) + '</div>' +
+        eur(s.ecart_mesure) + '</div>' +
+      (s.total_connu ? '' : '<div class="detail">espèces seules</div>') +
       '<div style="margin-top:4px">' + etiquetteCamera(reste) + '</div></div>' +
     '</button>' +
     '<div id="' + id + '" style="display:none">' +
@@ -398,10 +401,14 @@ function ligneFait(s) {
     '<div class="zone" ' +
       'style="background:var(--papier);border-bottom:1px solid var(--filet)"><dl>' +
       '<dt>Jour</dt><dd>' + jourLong(s.date_fiscale) + '</dd>' +
-      '<dt>Manquant en espèces</dt><dd>' + eur(s.ecart_especes) + '</dd>' +
-      '<dt>Écart carte</dt><dd>' + eur(s.ecart_cb) + '</dd>' +
-      '<dt>Écart TPE</dt><dd>' + eur(s.ecart_tpe) + '</dd>' +
-      '<dt>Écart toutes recettes de la caisse</dt><dd>' + eur(s.ecart_global) + '</dd>' +
+      (s.total_connu
+        ? '<dt>Écart total de la caisse</dt><dd style="font-weight:650">' +
+            eur(s.ecart_total) + ' sur ' + s.modes_en_ecart + ' mode(s) en écart</dd>'
+        : '<dt>Écart total de la caisse</dt><dd>non connu — déposez le détail ' +
+            'par règlement</dd>') +
+      '<dt>dont espèces</dt><dd>' + eur(s.ecart_especes) + '</dd>' +
+      '<dt>dont carte</dt><dd>' + eur(s.ecart_cb) + '</dd>' +
+      '<dt>dont TPE mobile</dt><dd>' + eur(s.ecart_tpe) + '</dd>' +
       (s.service_ecart !== null && s.service_ecart !== undefined
         ? '<dt>Écart du service entier</dt><dd>' + eur(s.service_ecart) + ' sur ' +
           s.service_caisses + ' caisses</dd>' : '') +
