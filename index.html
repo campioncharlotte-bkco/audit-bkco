@@ -331,11 +331,12 @@ async function vueEcarts(params) {
         'de comptages compte davantage que le montant : quelqu\'un qui valide beaucoup de ' +
         'caisses en accumule mécaniquement plus.</div>' +
       personnes.map(function(g){
-        return '<div class="ligne"><div class="corps">' +
-          '<div class="titre">' + esc(nom(g.qui)) + '</div>' +
+        return '<button class="ligne" onclick="vuePersonne(\'' + g.qui + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(nom(g.qui)) + '</div>' +
           '<div class="detail">' + g.n + ' comptage(s) sur ' +
-            Object.keys(g.jours).length + ' jour(s) · plus gros ' + eur(g.pire) + '</div></div>' +
-          '<div class="montant num negatif">' + eur(g.total) + '</div></div>';
+            Object.keys(g.jours).length + ' jour(s) · plus gros ' + eur(g.pire) +
+            ' · voir son historique</div></div>' +
+          '<div class="montant num negatif">' + eur(g.total) + '</div></button>';
       }).join("") + '</div>' : "") +
 
     ((d.compensees || []).length ? '<div class="bloc">' +
@@ -378,6 +379,110 @@ function ligneFait(s) {
       (s.echeance_camera ? '<dt>Images disponibles jusqu\'au</dt><dd>' +
         jour(s.echeance_camera) + '</dd>' : '') +
     '</dl></div></div>';
+}
+
+/* ---------- fiche d'un responsable ---------- */
+
+/* On trace le TAUX de comptages en manque, pas leur nombre : quelqu'un qui
+   passe de 30 à 60 caisses validées double ses écarts sans que son
+   comportement change. Le nombre brut reste affiché au-dessus de chaque
+   barre, parce que c'est lui qu'on va vérifier concrètement. */
+async function vuePersonne(code) {
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
+  const d = await api("audit", "personne",
+    { restaurant_id: E.ec.restaurant_id, code: code }).catch(afficherErreur);
+  if (!d) return;
+  E.noms = Object.assign({}, E.noms, d.noms || {});
+
+  const s = d.serie.filter(x => x.validees > 0);
+  const parMois = {};
+  d.faits.forEach(function (f) {
+    const m = String(f.date_fiscale).slice(0, 7) + "-01";
+    (parMois[m] = parMois[m] || []).push(f);
+  });
+
+  $("#vue").innerHTML =
+    '<button class="ligne" style="border:0;padding:4px 0;color:var(--ardoise);font-size:14px" ' +
+      'onclick="aller(\'ecarts\')">← Retour aux écarts</button>' +
+    '<h2>' + esc(d.nom) + '</h2>' +
+    '<p class="sous">Tous les comptages qu\'il ou elle a validés et qui manquaient de plus ' +
+      'de 20 €, sur toute la période chargée.</p>' +
+    '<div class="compteurs">' +
+      '<div><b>' + d.nb_faits + '</b><span>comptages en manque</span></div>' +
+      '<div><b class="montant negatif">' + eur0(d.total) + '</b><span>au total</span></div>' +
+      '<div><b>' + s.reduce((t, x) => t + x.validees, 0) + '</b><span>caisses validées</span></div>' +
+    '</div>' +
+    (s.length ? '<div class="bloc">' +
+      '<div class="entete">Mois par mois</div>' +
+      '<div class="zone">' + graphique(s) + '</div>' +
+      '<div class="note">' + esc(tendance(s)) + '</div>' +
+      s.slice().reverse().map(function (x) {
+        return '<div class="ligne"><div class="corps">' +
+          '<div class="titre">' + moisLisible(x.mois) + '</div>' +
+          '<div class="detail">' + x.en_manque + ' comptage(s) en manque sur ' +
+            x.validees + ' validés' + (x.taux !== null ? ' · ' + x.taux + ' %' : '') +
+            (x.pire ? ' · plus gros ' + eur(x.pire) : '') + '</div></div>' +
+          '<div class="montant num' + (x.total ? ' negatif' : '') + '">' +
+            (x.total ? eur(x.total) : '—') + '</div></div>';
+      }).join("") + '</div>' : "") +
+    Object.keys(parMois).sort().reverse().map(function (m) {
+      return '<div class="bloc"><div class="entete">' + moisLisible(m) + ' · ' +
+        parMois[m].length + ' comptage(s)</div>' +
+        parMois[m].sort((a, b) => Number(a.ecart_especes) - Number(b.ecart_especes))
+          .map(ligneFait).join("") + '</div>';
+    }).join("");
+}
+
+/* Un graphique fait à la main, sans bibliothèque : quelques barres et des
+   étiquettes. Il n'y a rien à ajouter qu'un outil apporterait ici. */
+function graphique(serie) {
+  const L = 620, H = 170, bas = 132, marge = 28;
+  const n = serie.length;
+  const large = Math.min(58, (L - marge * 2) / Math.max(n, 1) - 10);
+  const pas = (L - marge * 2) / Math.max(n, 1);
+  const max = Math.max(10, ...serie.map(x => x.taux || 0));
+  const barres = serie.map(function (x, i) {
+    const t = x.taux || 0;
+    const h = Math.round(t / max * 96);
+    const cx = marge + pas * i + pas / 2;
+    return '<rect x="' + (cx - large / 2) + '" y="' + (bas - h) + '" width="' + large +
+        '" height="' + Math.max(h, 1) + '" rx="3" fill="' +
+        (t >= max * 0.75 ? '#a32f2a' : t >= max * 0.4 ? '#b8730e' : '#7d8b98') + '"/>' +
+      '<text x="' + cx + '" y="' + (bas - h - 7) + '" text-anchor="middle" font-size="12" ' +
+        'font-weight="700" fill="#1a2028">' + x.en_manque + '</text>' +
+      '<text x="' + cx + '" y="' + (bas + 16) + '" text-anchor="middle" font-size="11" ' +
+        'fill="#5a6672">' + MOIS_FR[Number(x.mois.slice(5, 7)) - 1].slice(0, 4) + '</text>' +
+      '<text x="' + cx + '" y="' + (bas + 30) + '" text-anchor="middle" font-size="11" ' +
+        'fill="#5a6672">' + (x.taux === null ? '—' : x.taux + ' %') + '</text>';
+  }).join("");
+  return '<svg viewBox="0 0 ' + L + ' ' + H + '" style="width:100%;height:auto" ' +
+      'role="img" aria-label="Taux de comptages en manque par mois">' +
+    '<line x1="' + marge + '" y1="' + bas + '" x2="' + (L - marge) + '" y2="' + bas +
+      '" stroke="#dfe3e7"/>' + barres + '</svg>' +
+    '<p class="sous" style="margin:8px 0 0;font-size:12.5px">Hauteur des barres : part des ' +
+      'caisses validées qui manquaient de plus de 20 €. Au-dessus : le nombre de comptages ' +
+      'concernés.</p>';
+}
+
+/* Une phrase, pas un verdict. On compare les trois derniers mois aux trois
+   précédents, et on refuse de conclure en dessous de quatre mois. */
+function tendance(serie) {
+  if (serie.length < 4)
+    return "Seulement " + serie.length + " mois de données : trop peu pour parler de tendance.";
+  const taux = serie.map(x => x.taux || 0);
+  const coupe = Math.max(1, Math.floor(taux.length / 2));
+  const moy = l => l.reduce((t, x) => t + x, 0) / l.length;
+  const avant = moy(taux.slice(0, coupe)), apres = moy(taux.slice(coupe));
+  const p = n => Math.round(n * 10) / 10;
+  if (avant < 1 && apres < 1) return "Taux très faible sur toute la période, rien à signaler.";
+  if (apres >= avant * 1.4)
+    return "En hausse : " + p(avant) + " % des caisses en manque sur la première moitié de la "
+      + "période, " + p(apres) + " % sur la seconde.";
+  if (avant >= apres * 1.4)
+    return "En baisse : " + p(avant) + " % des caisses en manque sur la première moitié de la "
+      + "période, " + p(apres) + " % sur la seconde.";
+  return "Stable : autour de " + p((avant + apres) / 2) + " % des caisses validées sur toute "
+    + "la période.";
 }
 
 /* ---------- dépôt ---------- */
