@@ -229,7 +229,30 @@ function basculer(id) {
   if (e) e.style.display = e.style.display === "none" ? "block" : "none";
 }
 const momentLisible = s =>
-  ({ OUVERTURE:"ouverture", JOURNEE:"journée", FERMETURE:"fermeture" }[s] || "");
+  ({ MIDI:"service du midi", SOIR:"service du soir",
+     OUVERTURE:"ouverture", JOURNEE:"journée", FERMETURE:"fermeture" }[s] || "");
+
+/* Un manquant sur une caisse peut être repris par une autre caisse du même
+   service. Cette phrase est ce qui distingue une vraie perte d'une erreur
+   de ventilation, et elle change ce que le directeur doit faire. */
+const MOT_SERVICE = {
+  REPRIS: ["ok", "repris sur le service"],
+  PARTIEL: ["urgent", "en partie repris"],
+  MANQUE: ["expire", "manque réellement"]
+};
+function phraseService(s) {
+  if (!s.service_lecture) return "";
+  const e = eur(s.service_ecart), n = s.service_caisses;
+  if (s.service_lecture === "REPRIS")
+    return "Sur ce service, les " + n + " caisses totalisent " + e + " toutes recettes "
+      + "confondues : ce manquant est repris par une autre caisse. C'est une ventilation "
+      + "à corriger, pas de l'argent disparu.";
+  if (s.service_lecture === "PARTIEL")
+    return "Sur ce service, les " + n + " caisses totalisent " + e + " : le manquant de cette "
+      + "caisse est en grande partie repris ailleurs.";
+  return "Sur ce service, les " + n + " caisses totalisent " + e + " : l'argent manque "
+    + "réellement, il n'est repris par aucune autre caisse.";
+}
 function resteCamera(echeance) {
   if (!echeance) return null;
   return Math.ceil((new Date(echeance) - new Date()) / 86400000);
@@ -362,18 +385,25 @@ function ligneFait(s) {
       '<div class="corps"><div class="titre">' + jour(s.date_fiscale) + ' · ' +
         esc(nom(s.badge_code)) + '</div>' +
       '<div class="detail">' + esc(momentLisible(s.shift)) + ' · caisse ' +
-        esc(s.caisse || "—") + ' · validé par ' + esc(nom(s.responsable)) + '</div></div>' +
+        esc(s.caisse || "—") + ' · validé par ' + esc(nom(s.responsable)) +
+        (s.service_lecture ? ' · <span class="etiquette ' + MOT_SERVICE[s.service_lecture][0] +
+          '">' + MOT_SERVICE[s.service_lecture][1] + '</span>' : '') + '</div></div>' +
       '<div style="text-align:right"><div class="montant num negatif">' +
         eur(s.ecart_especes) + '</div>' +
       '<div style="margin-top:4px">' + etiquetteCamera(reste) + '</div></div>' +
     '</button>' +
-    '<div id="' + id + '" style="display:none"><div class="zone" ' +
+    '<div id="' + id + '" style="display:none">' +
+    (s.service_lecture ? '<div class="note">' + esc(phraseService(s)) + '</div>' : '') +
+    '<div class="zone" ' +
       'style="background:var(--papier);border-bottom:1px solid var(--filet)"><dl>' +
       '<dt>Jour</dt><dd>' + jourLong(s.date_fiscale) + '</dd>' +
       '<dt>Manquant en espèces</dt><dd>' + eur(s.ecart_especes) + '</dd>' +
       '<dt>Écart carte</dt><dd>' + eur(s.ecart_cb) + '</dd>' +
       '<dt>Écart TPE</dt><dd>' + eur(s.ecart_tpe) + '</dd>' +
-      '<dt>Écart toutes recettes</dt><dd>' + eur(s.ecart_global) + '</dd>' +
+      '<dt>Écart toutes recettes de la caisse</dt><dd>' + eur(s.ecart_global) + '</dd>' +
+      (s.service_ecart !== null && s.service_ecart !== undefined
+        ? '<dt>Écart du service entier</dt><dd>' + eur(s.service_ecart) + ' sur ' +
+          s.service_caisses + ' caisses</dd>' : '') +
       '<dt>Fonds de caisse</dt><dd>' + eur(s.fond_de_caisse) + '</dd>' +
       '<dt>Remises</dt><dd>' + (s.nb_remise || 0) + ' · ' + eur(s.montant_remise) + '</dd>' +
       '<dt>Annulations</dt><dd>' + (s.nb_annulation || 0) + ' · ' + eur(s.montant_annulation) + '</dd>' +
