@@ -301,6 +301,26 @@ const actions = {
     };
   },
 
+  // Le détail des 23 modes de règlement d'une session : exactement le
+  // tableau que le directeur a sous les yeux dans Cash Système. C'est là
+  // que se lit la différence entre un manquant et une ventilation.
+  async reglements({ restaurant_id, caisse, fin_session }, ctx) {
+    const rid = Number(restaurant_id);
+    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+    const lignes = await sb(`reglements_session?restaurant_id=eq.${rid}`
+      + `&caisse=eq.${encodeURIComponent(caisse)}`
+      + `&fin_session=eq.${encodeURIComponent(fin_session)}`
+      + `&select=*&order=reglement.asc`);
+    // on ne montre que ce qui bouge : vingt lignes à zéro n'apprennent rien
+    const utiles = lignes.filter(l => Math.abs(Number(l.ecart) || 0) > 0.01
+                                   || Math.abs(Number(l.theorique) || 0) > 0.01
+                                   || Math.abs(Number(l.declare) || 0) > 0.01);
+    const total = lignes.filter(l => l.reglement !== "REPAS EMPLOYE")
+      .reduce((t, l) => t + (Number(l.ecart) || 0), 0);
+    return { lignes: utiles, total: Math.round(total * 100) / 100,
+             nb_modes: lignes.length };
+  },
+
   // Ce qui s'est passé sur la caisse pendant la session où l'argent a
   // manqué. Chargé au clic, jamais avec la liste : sur un mois entier,
   // rapatrier le contexte de toutes les sessions serait inutile et lent.
