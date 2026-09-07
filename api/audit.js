@@ -367,6 +367,56 @@ const actions = {
     return { bornes, operations: ops };
   },
 
+  // Où chacun se situe. Sur toute la période chargée, pas sur un mois :
+  // un mauvais mois isolé ne dit rien, c'est la répétition qui parle.
+  // Le taux est le seul chiffre comparable — quelqu'un qui valide 180
+  // caisses accumule mécaniquement plus d'écarts que celui qui en valide 40.
+  async encadrants({ restaurant_id }, ctx) {
+    const rid = Number(restaurant_id);
+    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+    const [suivi, faits, ids] = await Promise.all([
+      sb(`v_encadrants_mois?restaurant_id=eq.${rid}&select=responsable,nom_affiche,mois,sessions`),
+      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&compense=is.false&select=*&limit=3000`),
+      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
+    ]);
+    const noms = {};
+    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
+
+    const par = {};
+    suivi.forEach(function (l) {
+      if (ctx.masques.includes(l.responsable)) return;
+      const e = par[l.responsable] || (par[l.responsable] = {
+        code: l.responsable, nom: l.nom_affiche || noms[l.responsable] || l.responsable,
+        validees: 0, mois: new Set(), en_manque: 0, total: 0, pire: 0, urgents: 0,
+        dernier: null });
+      e.validees += Number(l.sessions) || 0;
+      e.mois.add(l.mois);
+    });
+    const auj = new Date();
+    faits.forEach(function (f) {
+      const e = par[f.responsable];
+      if (!e) return;
+      e.en_manque++;
+      e.total += Number(f.ecart_mesure) || 0;
+      e.pire = Math.min(e.pire, Number(f.ecart_mesure) || 0);
+      if (f.echeance_camera && new Date(f.echeance_camera) >= auj) e.urgents++;
+      if (!e.dernier || f.date_fiscale > e.dernier) e.dernier = f.date_fiscale;
+    });
+
+    const liste = Object.values(par).map(e => ({
+      ...e, mois: e.mois.size,
+      total: Math.round(e.total * 100) / 100,
+      taux: e.validees ? Math.round(e.en_manque / e.validees * 1000) / 10 : null
+    })).sort((a, b) => (b.taux || 0) - (a.taux || 0) || a.total - b.total);
+
+    const totalValidees = liste.reduce((t, e) => t + e.validees, 0);
+    const totalManque = liste.reduce((t, e) => t + e.en_manque, 0);
+    return { encadrants: liste, noms,
+             taux_restaurant: totalValidees
+               ? Math.round(totalManque / totalValidees * 1000) / 10 : null,
+             validees: totalValidees, en_manque: totalManque };
+  },
+
   // Fiche d'un responsable : sa série mensuelle et tous ses comptages en
   // manque. Le taux est le seul chiffre comparable dans le temps — le
   // nombre brut suit le volume de caisses validées, qui varie d'un mois
