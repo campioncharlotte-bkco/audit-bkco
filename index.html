@@ -2,138 +2,214 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#243b53">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Audit BKCO</title>
+
+<!-- Ajout à l'écran d'accueil : l'app s'ouvre en plein écran, sans barre de navigateur -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Audit">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#B62123">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
 <style>
+/* ===================================================================
+   1. TOKENS — charte BKCO, communs à Planning, Reporting et Audit
+   =================================================================== */
 :root{
-  --papier:#f6f7f8; --surface:#fff; --encre:#1a2028; --ardoise:#5a6672;
-  --filet:#dfe3e7; --profond:#243b53; --ambre:#b8730e; --rouge:#a32f2a;
-  --vert:#2e6b4f; --sable:#f0ece4;
+  /* Rouge BKCO, relevé sur le logo. Il porte l'identité : bandeau,
+     onglet actif, écran d'accès. */
+  --navy:#B62123;      --navy-2:#9A1A1D;   --navy-3:#C9494B;
+  /* Ambre : appels à l'action et avertissements. Jamais l'identité. */
+  --orange:#D97706;    --orange-pale:#FDF1E1;
+  --rouge-pale:#FBEAEA;
+  --paper:#F4F5F7;     --card:#FFFFFF;
+  --ink:#111827;       --ink-2:#4B5563;    --ink-3:#9AA3AF;
+  --line:#E2E5EA;
+
+  --open:#1B7943;      --open-bg:#E2F4E9;
+  --close:#C0372D;     --close-bg:#FCE9E7;
+  --vacances:#9C5D00;  --vacances-bg:#FCEFD9;
+  --off:#646B78;       --off-bg:#EDEFF2;
+
+  --r:12px;
+  --bas:calc(58px + env(safe-area-inset-bottom));
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Inter",sans-serif;
 }
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{background:var(--papier);color:var(--encre);
-  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  -webkit-font-smoothing:antialiased}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:15px;
+     -webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;
+       color:inherit}
+input,select{font-family:inherit;font-size:16px}  /* 16px : évite le zoom auto iOS */
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
-button,input,select,textarea{font:inherit;color:inherit}
-button{cursor:pointer;border:0;background:none}
-select,input,textarea{background:var(--surface)}
 
-#connexion{min-height:100dvh;display:grid;place-items:center;padding:24px}
-.carte-connexion{width:100%;max-width:340px}
-.carte-connexion h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
-.carte-connexion p{color:var(--ardoise);margin:0 0 28px;font-size:14px}
-.champ{display:block;margin-bottom:14px}
-.champ span{display:block;font-size:13px;color:var(--ardoise);margin-bottom:5px}
-.champ input,.champ select{width:100%;padding:11px 12px;border:1px solid var(--filet);border-radius:7px}
-.champ input:focus,.champ select:focus{outline:2px solid var(--profond);outline-offset:1px}
-.principal{width:100%;padding:12px;border-radius:7px;background:var(--profond);color:#fff;font-weight:600}
-.principal:disabled{opacity:.5}
+/* ===================================================================
+   2. ÉCRAN D'ACCÈS
+   =================================================================== */
+#connexion{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;
+           justify-content:center;z-index:100;padding:24px}
+.carte-connexion{background:var(--card);border-radius:16px;padding:34px 26px;width:100%;
+                 max-width:330px;text-align:center}
+.sigle{background:var(--navy);color:#fff;width:66px;height:66px;border-radius:16px;
+       margin:0 auto 15px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;font-weight:800;font-size:16px;letter-spacing:.5px;line-height:1.1}
+.sigle span{font-size:9px;font-weight:700;letter-spacing:1px;margin-top:3px;
+            border-top:1.5px solid #fff;padding-top:3px}
+.carte-connexion h1{font-size:21px;letter-spacing:-.4px;margin-bottom:4px}
+.carte-connexion p{color:var(--ink-3);font-size:14px;margin-bottom:24px}
+.carte-connexion .champ{text-align:left;margin-bottom:12px}
+.principal{width:100%;padding:14px;background:var(--navy);color:#fff;border-radius:10px;
+           font-weight:600;font-size:16px}
+.principal:disabled{background:var(--ink-3)}
 
-#app{display:none;min-height:100dvh;padding-bottom:78px}
-header{position:sticky;top:0;z-index:10;background:var(--surface);
-  border-bottom:1px solid var(--filet);padding:12px 16px;display:flex;align-items:center;gap:12px}
-header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:-.01em}
-header .qui{margin-left:auto;font-size:13px;color:var(--ardoise)}
-main{max-width:880px;margin:0 auto;padding:18px 16px}
-h2{font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
-.sous{color:var(--ardoise);font-size:14px;margin:0 0 18px}
+/* ===================================================================
+   3. STRUCTURE
+   =================================================================== */
+#app{display:none;padding-bottom:var(--bas)}
 
-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);
-  border-top:1px solid var(--filet);display:flex;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;padding:11px 4px 13px;font-size:11px;color:var(--ardoise);
-  display:flex;flex-direction:column;align-items:center;gap:3px}
-nav button b{font-size:16px;font-weight:400;line-height:1}
-nav button[aria-current="page"]{color:var(--profond);font-weight:600;box-shadow:inset 0 2px 0 var(--profond)}
-@media(min-width:800px){
+header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:40;
+       padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+       display:flex;align-items:center;gap:12px;min-height:34px}
+header h1{font-size:17px;font-weight:600;letter-spacing:-.2px;flex:1;
+          color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header h1 em{font-style:normal;color:#fff;font-weight:800;letter-spacing:.4px}
+header .qui{font-size:13px;color:rgba(255,255,255,.72)}
+header button{background:none;border:1px solid rgba(255,255,255,.25);color:#fff;
+              padding:6px 11px;border-radius:8px;font-size:13px}
+
+main{padding:14px;max-width:900px;margin:0 auto}
+h2{font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:6px}
+.sous{color:var(--ink-3);font-size:13.5px;line-height:1.5;margin-bottom:16px}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.96);
+    backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;
+    padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:8px 2px 9px;display:flex;flex-direction:column;align-items:center;
+           gap:3px;color:var(--ink-3);font-size:10.5px;font-weight:600}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;
+               stroke-linecap:round;stroke-linejoin:round}
+nav button[aria-current="page"]{color:var(--navy)}
+
+@media (min-width:820px){
+  :root{--bas:0px}
   #app{padding-bottom:0}
-  nav{position:sticky;top:53px;bottom:auto;border-top:0;border-bottom:1px solid var(--filet);
-    max-width:880px;margin:0 auto}
-  nav button{flex:0 0 auto;padding:12px 16px;font-size:14px;flex-direction:row;gap:7px}
+  header{padding:12px 26px}
+  main{padding:22px 26px}
+  nav{position:sticky;top:0;bottom:auto;background:var(--navy);border-top:none;
+      border-bottom:1px solid rgba(255,255,255,.1);padding:0 26px;justify-content:flex-start;
+      gap:4px;max-width:none}
+  nav button{flex:0 0 auto;flex-direction:row;gap:8px;padding:11px 16px;font-size:14px;
+             color:rgba(255,255,255,.72)}
+  nav button svg{width:18px;height:18px}
+  nav button[aria-current="page"]{color:#fff;box-shadow:inset 0 -2px 0 #fff}
 }
 
-.bloc{background:var(--surface);border:1px solid var(--filet);border-radius:9px;
-  overflow:hidden;margin-bottom:16px}
-.entete{padding:11px 14px;background:var(--papier);border-bottom:1px solid var(--filet);
-  font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ardoise)}
-.ligne{display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid var(--filet);
-  align-items:baseline;width:100%;text-align:left}
-.ligne:last-child{border-bottom:0}
-button.ligne:hover{background:var(--papier)}
-.ligne .corps{flex:1;min-width:0}
-.ligne .titre{font-weight:600;font-size:14.5px}
-.ligne .detail{color:var(--ardoise);font-size:13px;margin-top:3px;word-break:break-word}
-.montant{font-weight:650;white-space:nowrap}
-.montant.negatif{color:var(--rouge)}
-
-.etiquette{display:inline-block;font-size:11.5px;padding:2px 7px;border-radius:4px;
-  background:var(--sable);color:var(--ardoise);font-weight:600}
-.etiquette.urgent{background:#f7ede0;color:var(--ambre)}
-.etiquette.expire{background:#f6e6e5;color:var(--rouge)}
-.etiquette.ok{background:#e6efea;color:var(--vert)}
-
-/* Sélecteurs directs : on voit tous les choix, on clique. Un menu
-   déroulant cache l'information et demande deux gestes au lieu d'un. */
-.pastilles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.pastilles button{padding:7px 13px;border-radius:20px;border:1px solid var(--filet);
-  background:var(--surface);font-size:13.5px;font-weight:600;color:var(--ardoise)}
-.pastilles button:hover{border-color:var(--profond)}
-.pastilles button[aria-pressed="true"]{background:var(--profond);border-color:var(--profond);
-  color:#fff}
-.navmois{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.navmois button{width:36px;height:36px;border-radius:9px;border:1px solid var(--filet);
-  background:var(--surface);font-size:17px;line-height:1;color:var(--profond)}
-.navmois button:disabled{opacity:.35;cursor:default}
-.navmois .mois{font-weight:650;font-size:16px;min-width:130px;text-align:center}
-.recherche{width:100%;padding:9px 12px;border:1px solid var(--filet);border-radius:9px;
-  margin-bottom:10px;font-size:14px}
-
-.compteurs{display:flex;border:1px solid var(--filet);border-radius:9px;
-  background:var(--surface);margin-bottom:16px;overflow:hidden}
-.compteurs div{flex:1;padding:13px 12px;text-align:center;border-right:1px solid var(--filet)}
-.compteurs div:last-child{border-right:0}
-.compteurs b{display:block;font-size:19px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.compteurs span{font-size:11.5px;color:var(--ardoise)}
-
-.vide{padding:40px 20px;text-align:center;color:var(--ardoise)}
-.vide b{display:block;color:var(--encre);margin-bottom:6px;font-size:15px}
-
-.duo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
-.duo .champ{flex:1;min-width:170px;margin:0}
-.progression{margin-bottom:16px;font-size:14px;color:var(--ardoise)}
-.progression b{color:var(--encre)}
-.jauge{height:5px;background:var(--filet);border-radius:3px;overflow:hidden;margin-bottom:8px}
-.jauge span{display:block;height:100%;background:var(--profond);transition:width .3s}
-.bouton-depot{flex:0 0 auto;align-self:center;padding:8px 14px;border:1px solid var(--filet);
-  border-radius:7px;background:var(--surface);font-size:13.5px;font-weight:600}
-.bouton-depot:hover{border-color:var(--profond);color:var(--profond)}
-.bouton-depot.fait{border:0;background:transparent;color:var(--ardoise);font-weight:500}
-
-dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px}
-dt{color:var(--ardoise)}
-dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+/* ===================================================================
+   4. COMPOSANTS
+   =================================================================== */
+.bloc{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+      overflow:hidden;margin-bottom:14px}
+.carte-titre{padding:12px 15px;border-bottom:1px solid var(--line);font-weight:650;
+             font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink-2)}
 .zone{padding:14px}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
-.actions button{padding:9px 14px;border-radius:7px;border:1px solid var(--filet);
-  background:var(--surface);font-size:14px;font-weight:500}
-.actions button.fort{background:var(--profond);color:#fff;border-color:var(--profond)}
 
-.alerte{padding:11px 13px;border-radius:7px;font-size:14px;margin-bottom:14px}
-.alerte.erreur{background:#f6e6e5;color:var(--rouge)}
-.alerte.info{background:#eef2f6;color:var(--profond)}
-.note{padding:11px 14px;background:#eef2f6;color:var(--profond);
-  font-size:13.5px;line-height:1.45;border-bottom:1px solid var(--filet)}
-.chargement{color:var(--ardoise);padding:30px;text-align:center}
+.ligne{display:flex;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);
+       align-items:baseline;width:100%;text-align:left;background:none}
+.ligne:last-child{border-bottom:0}
+button.ligne:active,button.ligne:hover{background:var(--paper)}
+.ligne .corps{flex:1;min-width:0}
+.ligne .titre{font-weight:650;font-size:15px;letter-spacing:-.2px}
+.ligne .detail{color:var(--ink-3);font-size:13px;margin-top:3px;line-height:1.45;
+               word-break:break-word}
+.montant{font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+.montant.negatif{color:var(--close)}
+
+.etiquette{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;
+           background:var(--off-bg);color:var(--off);font-weight:700}
+.etiquette.urgent{background:var(--vacances-bg);color:var(--vacances)}
+.etiquette.expire{background:var(--close-bg);color:var(--close)}
+.etiquette.ok{background:var(--open-bg);color:var(--open)}
+
+/* Sélecteurs directs : on voit tous les choix, on clique. Un menu déroulant
+   cache l'information et demande deux gestes au lieu d'un. */
+.pastilles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px}
+.pastilles button{border:1px solid var(--line);background:var(--card);border-radius:20px;
+                  padding:8px 15px;font-size:13px;font-weight:650;color:var(--ink-2);
+                  text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.pastilles button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+
+.navmois{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.navmois button{width:38px;height:38px;flex:0 0 38px;border:1px solid var(--line);
+                background:var(--card);border-radius:10px;font-size:18px;line-height:1;
+                color:var(--ink-2)}
+.navmois button:disabled{opacity:.35;cursor:default}
+.navmois .mois{font-weight:650;font-size:15px;min-width:128px;text-align:center}
+.navmois .mois::first-letter{text-transform:uppercase}
+.recherche{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+           margin-bottom:10px;background:var(--card)}
+
+/* Chiffres de tête : le repère qu'on lit avant tout le reste */
+.compteurs{display:flex;gap:11px;margin-bottom:14px;flex-wrap:wrap}
+.compteurs div{flex:1;min-width:118px;background:var(--card);border:1px solid var(--line);
+               border-radius:11px;padding:12px 14px;text-align:left}
+.compteurs b{display:block;font-size:22px;line-height:1.15;font-variant-numeric:tabular-nums;
+             color:var(--navy);font-weight:750}
+.compteurs b.montant.negatif{color:var(--close)}
+.compteurs span{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.4px;
+                font-weight:650}
+
+.note{padding:12px 14px;background:var(--card);border-left:3px solid var(--navy-3);
+      border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.55;color:var(--ink-2)}
+.alerte{padding:12px 14px;border-radius:10px;font-size:13.5px;line-height:1.55;margin-bottom:12px;
+        background:var(--card);border:1px solid var(--line);border-left:3px solid var(--navy-3)}
+.alerte.erreur{border-left-color:var(--close);background:var(--close-bg);color:var(--close)}
+.alerte.info{border-left-color:var(--navy-3)}
+
+.champ{display:block;margin-bottom:14px}
+.champ span{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;
+            color:var(--ink-3);font-weight:700;margin-bottom:7px}
+.champ input,.champ select{width:100%;padding:12px;border:1px solid var(--line);
+                           border-radius:10px;background:var(--card)}
+.champ input:focus,.champ select:focus{outline:2px solid var(--navy);outline-offset:-1px}
+.duo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.duo .champ{flex:1;min-width:170px;margin:0}
+
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:15px}
+.actions button{padding:11px 16px;border-radius:10px;border:1px solid var(--line);
+                background:var(--card);font-size:14px;font-weight:600;color:var(--ink)}
+.actions button.fort{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:13.5px}
+dt{color:var(--ink-3)}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+
+.progression{margin-bottom:14px;font-size:13.5px;color:var(--ink-3)}
+.progression b{color:var(--ink)}
+.jauge{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.jauge span{display:block;height:100%;background:var(--navy);transition:width .3s}
+.bouton-depot{flex:0 0 auto;align-self:center;padding:9px 15px;border:1px solid var(--line);
+              border-radius:10px;background:var(--card);font-size:13.5px;font-weight:650}
+.bouton-depot:hover{border-color:var(--navy);color:var(--navy)}
+.bouton-depot.fait{border-color:transparent;background:transparent;color:var(--ink-3);font-weight:550}
+
+.vide{padding:44px 20px;text-align:center;color:var(--ink-3);font-size:14px;line-height:1.5}
+.vide b{display:block;color:var(--ink-2);margin-bottom:6px;font-size:16px;font-weight:650}
+.chargement{text-align:center;padding:40px;color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 
 <section id="connexion">
   <form class="carte-connexion" onsubmit="seConnecter(event)">
-    <h1>Audit BKCO</h1>
-    <p>Écarts de caisse à vérifier.</p>
+    <div class="sigle">BKCO<span>AUDIT</span></div>
+    <h1>Audit</h1>
+    <p>Écarts de caisse à vérifier</p>
     <div id="err-connexion"></div>
     <label class="champ"><span>Adresse e-mail</span>
       <input id="email" type="email" autocomplete="username" required></label>
@@ -145,9 +221,9 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 
 <div id="app">
   <header>
-    <h1>Audit BKCO</h1>
+    <h1>Audit <em>BKCO</em></h1>
     <span class="qui" id="qui"></span>
-    <button onclick="seDeconnecter()" style="color:var(--ardoise);font-size:13px">Quitter</button>
+    <button onclick="seDeconnecter()">Fermer</button>
   </header>
   <nav id="nav"></nav>
   <main id="vue"></main>
@@ -155,6 +231,7 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
+
 /* =====================================================================
    AUDIT BKCO — version 2
    Cette version ne rend aucun verdict. Elle affiche des faits, triés par
@@ -170,6 +247,25 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
    ===================================================================== */
 
 const E = {};
+
+/* Icônes de la barre d'onglets, au trait, comme dans les autres apps BKCO. */
+const ICONES = {
+  ecarts:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>'
+         + '<path d="M12 9v4"/><path d="M12 17h.01"/>',
+  depot:   '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/>'
+         + '<path d="M12 15V3"/>',
+  remises: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/>'
+         + '<circle cx="17.5" cy="17.5" r="2.5"/>',
+  equipe:  '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+         + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>',
+  acces:   '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8'
+         + 'l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4'
+         + 'a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1'
+         + 'H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1'
+         + 'a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3'
+         + 'l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1'
+         + 'a1.6 1.6 0 0 0-1.5 1z"/>'
+};
 const $ = s => document.querySelector(s);
 const eur = n => (n === null || n === undefined ? "—" :
   Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
@@ -221,11 +317,12 @@ async function demarrer() {
   $("#connexion").style.display = "none";
   $("#app").style.display = "block";
   $("#qui").textContent = d.utilisateur.nom;
-  const onglets = [["ecarts","Écarts","!"],["depot","Dépôt","+"],
-                   ["remises","Remises","%"],["equipe","Équipe","•"]];
-  if (d.utilisateur.role === "DG") onglets.push(["admin","Accès","*"]);
+  const onglets = [["ecarts","Écarts",ICONES.ecarts],["depot","Dépôt",ICONES.depot],
+                   ["remises","Remises",ICONES.remises],["equipe","Équipe",ICONES.equipe]];
+  if (d.utilisateur.role === "DG") onglets.push(["admin","Accès",ICONES.acces]);
   $("#nav").innerHTML = onglets.map(function(o){
-    return '<button data-onglet="'+o[0]+'" onclick="aller(\''+o[0]+'\')"><b>'+o[2]+'</b>'+o[1]+'</button>';
+    return '<button data-onglet="' + o[0] + '" onclick="aller(\'' + o[0] + '\')">' +
+      '<svg viewBox="0 0 24 24">' + o[2] + '</svg>' + o[1] + '</button>';
   }).join("");
   aller(E.droits.lecture.length ? "ecarts" : "depot");
 }
@@ -368,7 +465,7 @@ async function vueEcarts(params) {
     '</div>' +
 
     (urgents.length ? '<div class="bloc">' +
-      '<div class="entete">À regarder maintenant · ' + urgents.length + '</div>' +
+      '<div class="carte-titre">À regarder maintenant · ' + urgents.length + '</div>' +
       '<div class="note">Les images sont conservées 14 jours. Passé ce délai, ces écarts ' +
         'ne pourront plus être vérifiés autrement qu\'en interrogeant les personnes.</div>' +
       urgents.slice().sort(function(a,b){
@@ -377,7 +474,7 @@ async function vueEcarts(params) {
         .map(ligneFait).join("") + '</div>' : "") +
 
     (personnes.length ? '<div class="bloc">' +
-      '<div class="entete">Qui a validé ces comptages · ' + personnes.length + '</div>' +
+      '<div class="carte-titre">Qui a validé ces comptages · ' + personnes.length + '</div>' +
       (personnes.length > 6 ? '<div class="zone" style="padding-bottom:0">' +
         '<input class="recherche" placeholder="Filtrer par nom…" ' +
         'oninput="filtrerPersonnes(this.value)"></div>' : '') +
@@ -395,7 +492,7 @@ async function vueEcarts(params) {
       }).join("") + '</div>' : "") +
 
     (faits.length ? '<div class="bloc">' +
-      '<div class="entete">Tous les comptages du mois · ' + faits.length + '</div>' +
+      '<div class="carte-titre">Tous les comptages du mois · ' + faits.length + '</div>' +
       '<div class="note">Du plus gros manquant au plus petit, quelle que soit la ' +
         'disponibilité des images.</div>' +
       faits.map(ligneFait).join("") + '</div>'
@@ -608,7 +705,7 @@ async function vuePersonne(code) {
       '<div><b>' + s.reduce((t, x) => t + x.validees, 0) + '</b><span>caisses validées</span></div>' +
     '</div>' +
     (s.length ? '<div class="bloc">' +
-      '<div class="entete">Mois par mois</div>' +
+      '<div class="carte-titre">Mois par mois</div>' +
       '<div class="zone">' + graphique(s) + '</div>' +
       '<div class="note">' + esc(tendance(s)) + '</div>' +
       s.slice().reverse().map(function (x) {
@@ -621,7 +718,7 @@ async function vuePersonne(code) {
             (x.total ? eur(x.total) : '—') + '</div></div>';
       }).join("") + '</div>' : "") +
     Object.keys(parMois).sort().reverse().map(function (m) {
-      return '<div class="bloc"><div class="entete">' + moisLisible(m) + ' · ' +
+      return '<div class="bloc"><div class="carte-titre">' + moisLisible(m) + ' · ' +
         parMois[m].length + ' comptage(s)</div>' +
         parMois[m].sort((a, b) => Number(a.ecart_especes) - Number(b.ecart_especes))
           .map(ligneFait).join("") + '</div>';
@@ -949,7 +1046,7 @@ async function vueEquipe(params) {
       'n\'est pas renseigné, ses écarts s\'affichent en trigramme illisible.</p>' +
     pastillesRestos(restos, rid, "equipe") +
     ((d.inconnus_encadrants || []).length ? '<div class="bloc">' +
-      '<div class="entete">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
+      '<div class="carte-titre">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
       '<div class="note">Ce sont eux qui valident les comptages de caisse. Leur nom complet ' +
         'figure dans la déclaration, la fiche est déjà pré-remplie : il ne reste qu\'à ' +
         'confirmer.</div>' +
@@ -973,7 +1070,7 @@ async function vueEquipe(params) {
           '<span class="etiquette">à compléter</span></button>').join("") +
       '</div></div>' : "") +
     '<div class="bloc">' +
-      '<div class="entete">Enregistrés · ' + d.salaries.length + '</div>' +
+      '<div class="carte-titre">Enregistrés · ' + d.salaries.length + '</div>' +
       (d.salaries.length ? d.salaries.map(s =>
         '<button class="ligne" onclick="fiche(' + s.id + ')">' +
         '<div class="corps"><div class="titre">' + esc(s.badge_code) +
@@ -1074,7 +1171,7 @@ async function vueAdmin() {
     /* Ouvrir un site ne doit pas demander de passer par l'éditeur SQL :
        Étaples arrive, et il y en aura d'autres. */
     '<div class="bloc">' +
-      '<div class="entete">Restaurants · ' + r.restaurants.length + '</div>' +
+      '<div class="carte-titre">Restaurants · ' + r.restaurants.length + '</div>' +
       r.restaurants.map(x =>
         '<button class="ligne" onclick="ficheResto(' + x.id + ')">' +
           '<div class="corps"><div class="titre">' + esc(x.nom) + '</div>' +
