@@ -378,8 +378,75 @@ function ligneFait(s) {
       '<dt>Corrections</dt><dd>' + (s.nb_correction || 0) + ' · ' + eur(s.montant_correction) + '</dd>' +
       (s.echeance_camera ? '<dt>Images disponibles jusqu\'au</dt><dd>' +
         jour(s.echeance_camera) + '</dd>' : '') +
-    '</dl></div></div>';
+    '</dl></div>' +
+    '<div id="ctx' + id + '" class="zone" style="border-bottom:1px solid var(--filet)">' +
+      '<button class="fort" style="padding:8px 13px;border-radius:7px;background:var(--profond);' +
+        'color:#fff;font-size:13.5px;font-weight:600" ' +
+        'onclick="contexte(' + s.id + ',\'' + id + '\',this)">' +
+        'Que s\'est-il passé sur cette caisse ?</button></div>' +
+    '</div>';
 }
+
+/* Le contexte se charge au clic, pas avec la liste : sur un mois entier,
+   rapatrier les opérations de toutes les sessions serait long et inutile. */
+async function contexte(sessionId, id, bouton) {
+  const zone = document.getElementById("ctx" + id);
+  bouton.disabled = true; bouton.textContent = "Lecture…";
+  try {
+    const d = await api("audit", "contexte",
+      { session_id: sessionId, restaurant_id: E.ec.restaurant_id });
+    zone.innerHTML = rendreContexte(d);
+  } catch (e) {
+    zone.innerHTML = '<div class="alerte erreur" style="margin:0">' + esc(e.message) + '</div>';
+  }
+}
+
+const MOT_OP = {
+  CORRECTION: "Correction de ticket",
+  ANNULATION: "Annulation",
+  REMISE: "Remise",
+  COMMANDE_OUVERTE: "Commande ouverte",
+  REPAS_EMPLOYE: "Repas employé"
+};
+
+function rendreContexte(d) {
+  const b = d.bornes, ops = d.operations || [];
+  const creneau = "Caisse ouverte de " + heure(b.debut_session) + " à " + heure(b.fin_session) +
+    (b.borne_estimee ? " (début estimé, la clôture précédente est inconnue)" : "");
+
+  if (!ops.length)
+    return '<p class="sous" style="margin:0">' + esc(creneau) + '. <b>Aucune opération ' +
+      'enregistrée sur cette caisse pendant le créneau</b> : ni correction, ni annulation, ' +
+      'ni remise, ni commande ouverte. L\'argent manque sans qu\'aucune opération de caisse ' +
+      'ne l\'explique.</p>';
+
+  const parType = {};
+  ops.forEach(function (o) { (parType[o.type] = parType[o.type] || []).push(o); });
+
+  return '<p class="sous" style="margin:0 0 10px">' + esc(creneau) + ' · ' + ops.length +
+      ' opération(s) sur le créneau.</p>' +
+    Object.keys(parType).map(function (t) {
+      const l = parType[t];
+      const total = l.reduce((s, o) => s + Number(o.montant || 0), 0);
+      return '<div style="margin-bottom:10px">' +
+        '<div style="font-weight:650;font-size:13.5px">' + (MOT_OP[t] || t) + ' · ' +
+          l.length + ' · ' + eur(total) + '</div>' +
+        l.slice(0, 12).map(function (o) {
+          return '<div style="font-size:13px;color:var(--ardoise);padding:3px 0">' +
+            heure(o.horodate) + ' · ' + eur(o.montant) +
+            (o.qui ? ' · ' + esc(nom(o.qui)) : '') +
+            (o.valide_par && o.valide_par !== o.qui ? ' · validé par ' + esc(nom(o.valide_par)) : '') +
+            (o.libelle ? ' · ' + esc(o.libelle) : '') +
+            (o.ticket ? ' · ticket ' + esc(o.ticket) : '') + '</div>';
+        }).join("") +
+        (l.length > 12 ? '<div style="font-size:13px;color:var(--ardoise)">et ' +
+          (l.length - 12) + ' autre(s)</div>' : '') +
+      '</div>';
+    }).join("");
+}
+
+const heure = t => t ? new Date(t).toLocaleTimeString("fr-FR",
+  { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) : "—";
 
 /* ---------- fiche d'un responsable ---------- */
 
