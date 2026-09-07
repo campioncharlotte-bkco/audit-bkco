@@ -440,27 +440,53 @@ const actions = {
     return { ok: true };
   },
 
-  // La table des salariés est le pivot du dispositif : sans elle, aucune
-  // anomalie n'est nominative. On renvoie donc aussi les badges vus dans
-  // les données mais absents de la table — ce sont eux qui font apparaître
-  // des trigrammes illisibles dans l'analyse.
+  // La table des salariés est le pivot : sans elle, aucun écart n'est
+  // nominatif. On sépare les encadrants des équipiers, parce qu'ils ne
+  // demandent pas le même travail. Le nom complet d'un encadrant figure
+  // en clair dans la colonne du valideur de la Déclaration de caisse
+  // (« BAUDRY Laurence ») : sa fiche se pré-remplit toute seule. Un
+  // équipier n'apparaît que sous son trigramme, il faut le saisir.
   async salaries({ restaurant_id }, ctx) {
     if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
     const [liste, flux, sessions] = await Promise.all([
       sb(`salaries?restaurant_id=eq.${restaurant_id}&select=*&order=badge_code`),
       sb(`flux_caissiers?restaurant_id=eq.${restaurant_id}&select=badge_code`),
-      sb(`sessions_caisse?restaurant_id=eq.${restaurant_id}&select=badge_code,valide_par&limit=3000`)
+      sb(`sessions_caisse?restaurant_id=eq.${restaurant_id}`
+        + `&select=badge_code,valide_par&limit=5000`)
     ]);
     const connus = new Set(liste.map(s => s.badge_code));
-    const vus = new Set();
-    flux.forEach(f => { if (f.badge_code) vus.add(String(f.badge_code).trim().toUpperCase()); });
-    sessions.forEach(s => {
-      if (s.badge_code) vus.add(String(s.badge_code).trim().toUpperCase());
+
+    // même règle que Cash Système : 4 lettres du nom + 3 du prénom
+    const badge = v => {
+      const t = String(v || "").trim();
+      if (!t) return null;
+      if (t.indexOf(" ") < 0) return t.toUpperCase();
+      const [nom, prenom] = t.split(/\s+/);
+      return (nom.slice(0, 4) + (prenom || "").slice(0, 3)).toUpperCase();
+    };
+
+    const encadrants = new Map();   // badge -> nom complet le plus fréquent
+    const equipiers = new Set();
+    sessions.forEach(function (s) {
       const v = s.valide_par && String(s.valide_par).trim();
-      if (v && v.indexOf(" ") < 0) vus.add(v.toUpperCase());
+      if (v) {
+        const b = badge(v);
+        if (b && !encadrants.has(b)) encadrants.set(b, v.indexOf(" ") > 0 ? v : null);
+      }
+      if (s.badge_code) equipiers.add(String(s.badge_code).trim().toUpperCase());
     });
-    return { salaries: liste,
-             inconnus: [...vus].filter(b => b && !connus.has(b)).sort() };
+    flux.forEach(f => { if (f.badge_code) equipiers.add(String(f.badge_code).trim().toUpperCase()); });
+
+    return {
+      salaries: liste,
+      inconnus_encadrants: [...encadrants.entries()]
+        .filter(([b]) => b && !connus.has(b))
+        .map(([badge_code, nom_propose]) => ({ badge_code, nom_propose }))
+        .sort((a, b) => a.badge_code.localeCompare(b.badge_code)),
+      inconnus_equipiers: [...equipiers]
+        .filter(b => b && !connus.has(b) && !encadrants.has(b))
+        .sort()
+    };
   },
 
   async supprimerSalarie({ id, restaurant_id }, ctx) {
