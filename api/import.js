@@ -146,6 +146,85 @@ async function remplacerAncienDepot(rid, code, debut, fin, saufId, table) {
   return anciens.length;
 }
 
+/* ---------- règlements détaillés de la Déclaration de caisse ---------- */
+
+/* La Déclaration de caisse contient une ligne par session ET par mode de
+   règlement — 23 modes, dont ESPECES, CB, TPE MOBILE, ANCV, CRT et ses cinq
+   marques. Le parser historique n'en retenait que trois, ce qui faisait
+   voir un manquant de 124 € là où le rapport affiche un écart total de
+   0,53 €, les titres restaurant ayant simplement été déclarés sous la
+   mauvaise marque.
+
+   Cette lecture est écrite ici plutôt que dans parsers.js à dessein : ce
+   fichier porte les douze formats d'export et n'est pas reproductible,
+   je préfère ne pas y toucher pour une capture supplémentaire. */
+
+const COL = { badge: 3, valide_par: 5, caisse: 6, reglement: 7,
+              theorique: 8, declare: 9, fin_session: 11, ecart: 15 };
+
+// « 19216813 » dans le fichier, « 192.168.1.3 » en base : on aligne sur la
+// forme déjà utilisée par sessions_caisse, sans quoi rien ne se rapproche.
+function normaliserCaisse(v) {
+  const t = String(v || "").trim().replace(/"/g, "");
+  const m = t.match(/^192168(\d)(\d+)$/);
+  return m ? `192.168.${m[1]}.${m[2]}` : t;
+}
+
+const nombre = v => {
+  const t = String(v ?? "").trim().replace(/"/g, "").replace(/\s/g, "").replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Découpage d'une ligne CSV point-virgule, guillemets compris.
+function champs(ligne) {
+  const out = []; let cour = "", dansGuillemets = false;
+  for (let i = 0; i < ligne.length; i++) {
+    const c = ligne[i];
+    if (c === '"') { dansGuillemets = !dansGuillemets; continue; }
+    if (c === ";" && !dansGuillemets) { out.push(cour); cour = ""; continue; }
+    cour += c;
+  }
+  out.push(cour);
+  return out;
+}
+
+function extraireReglements(contenu, restaurant_id, import_id) {
+  const lignes = String(contenu).split(/\r?\n/).filter(l => l.trim());
+  if (!lignes.length) return [];
+  const entete = lignes[0].toUpperCase();
+  if (entete.indexOf("REGLEMENT") < 0 || entete.indexOf("MONTANT_THEORIQUE") < 0) return [];
+
+  const vues = new Set();
+  const out = [];
+  for (const l of lignes.slice(1)) {
+    const c = champs(l);
+    if (c.length < 16) continue;
+    const reglement = String(c[COL.reglement] || "").trim().toUpperCase();
+    const fin = String(c[COL.fin_session] || "").trim();
+    const caisse = normaliserCaisse(c[COL.caisse]);
+    if (!reglement || !fin || !caisse) continue;
+    // le fichier peut contenir deux fois la même clé si un mois est exporté
+    // à cheval : on garde la première occurrence
+    const cle = `${caisse}|${fin}|${reglement}`;
+    if (vues.has(cle)) continue;
+    vues.add(cle);
+    const theorique = nombre(c[COL.theorique]);
+    const declare = nombre(c[COL.declare]);
+    out.push({
+      import_id, restaurant_id, caisse, fin_session: fin,
+      badge_code: normaliserIdentite(c[COL.badge]),
+      valide_par: normaliserIdentite(c[COL.valide_par]),
+      reglement, theorique, declare,
+      ecart: nombre(c[COL.ecart]) ??
+             (declare !== null && theorique !== null ? Math.round((declare - theorique) * 100) / 100
+                                                     : null)
+    });
+  }
+  return out;
+}
+
 /* ---------- dépôt ---------- */
 
 async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, periode_fin,
@@ -249,6 +328,23 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
             body: JSON.stringify([l]) });
     } else {
       await parLots(p.table, lignes);
+    }
+
+    // Les 23 modes de règlement de la Déclaration de caisse, que le parser
+    // historique laissait tomber.
+    if (p.table === "sessions_caisse") {
+      etape = "enregistrement des modes de règlement";
+      const regl = extraireReglements(contenu, Number(restaurant_id), imp.id);
+      if (regl.length) {
+        await sb(`reglements_session?restaurant_id=eq.${restaurant_id}`
+          + `&fin_session=gte.${debut}T00:00:00&fin_session=lte.${fin}T23:59:59`,
+          { method: "DELETE", prefer: "return=minimal" });
+        for (let i = 0; i < regl.length; i += 500)
+          await sb("reglements_session", { method: "POST",
+            prefer: "resolution=merge-duplicates,return=minimal",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: JSON.stringify(regl.slice(i, i + 500)) });
+      }
     }
 
     etape = "enregistrement des libellés de remise";
