@@ -319,12 +319,6 @@ async function vueEcarts(params) {
             || Number(a.ecart_especes) - Number(b.ecart_especes); })
         .map(ligneFait).join("") + '</div>' : "") +
 
-    (faits.length ? '<div class="bloc">' +
-      '<div class="entete">Tous les comptages du mois, du plus gros au plus petit</div>' +
-      faits.map(ligneFait).join("") + '</div>'
-    : '<div class="bloc"><div class="vide"><b>Aucun manquant ce mois-ci</b>' +
-      'Tous les comptages sont sous 20 € ou repris par un autre mode de règlement.</div></div>') +
-
     (personnes.length ? '<div class="bloc">' +
       '<div class="entete">Qui a validé ces comptages</div>' +
       '<div class="note">Le responsable est celui qui a compté et validé la caisse. Le nombre ' +
@@ -338,6 +332,14 @@ async function vueEcarts(params) {
             ' · voir son historique</div></div>' +
           '<div class="montant num negatif">' + eur(g.total) + '</div></button>';
       }).join("") + '</div>' : "") +
+
+    (faits.length ? '<div class="bloc">' +
+      '<div class="entete">Tous les comptages du mois · ' + faits.length + '</div>' +
+      '<div class="note">Du plus gros manquant au plus petit, quelle que soit la ' +
+        'disponibilité des images.</div>' +
+      faits.map(ligneFait).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun manquant ce mois-ci</b>' +
+      'Tous les comptages sont sous 20 € ou repris par un autre mode de règlement.</div></div>') +
 
     ((d.compensees || []).length ? '<div class="bloc">' +
       '<button class="ligne" onclick="basculer(\'compensees\')">' +
