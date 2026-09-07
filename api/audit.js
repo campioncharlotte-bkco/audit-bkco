@@ -280,11 +280,16 @@ const actions = {
         const sh = parShift[`${s.date_fiscale}|${s.shift}`] || null;
         const service = sh ? Number(sh.ecart_global) : null;
         const manquant = Math.abs(Number(s.ecart_especes) || 0);
+        // Le SIGNE compte autant que l'ampleur. Un service en excédent
+        // pendant qu'une caisse manque est le cas de ventilation par
+        // excellence : l'argent est sur une autre caisse. Ma première
+        // version ne regardait que la valeur absolue et classait « manque
+        // réellement » un service à +60 € — l'inverse de la réalité.
         return { ...s,
           service_ecart: service,
           service_caisses: sh ? sh.caisses : null,
           service_lecture: service === null ? null
-            : Math.abs(service) < 10 ? "REPRIS"
+            : service > -10 ? "REPRIS"
             : Math.abs(service) < manquant * 0.5 ? "PARTIEL"
             : "MANQUE" };
       });
