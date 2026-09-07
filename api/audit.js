@@ -258,11 +258,37 @@ const actions = {
     ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
     if (!m) return { mois: null, mois_disponibles: [], noms, sessions: [], compensees: [] };
 
-    const brutes = await sb(`v_ecarts_sessions?restaurant_id=eq.${rid}`
-      + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}`
-      + `&select=*&order=ecart_especes.asc`);
-    const visibles = brutes.filter(s => !ctx.masques.includes(s.badge_code)
-                                     && !ctx.masques.includes(s.responsable));
+    const [brutes, shifts] = await Promise.all([
+      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}`
+        + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}`
+        + `&select=*&order=ecart_especes.asc`),
+      sb(`v_shifts_jour?restaurant_id=eq.${rid}`
+        + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}&select=*`)
+    ]);
+
+    // Un manquant sur une caisse peut être repris par une autre caisse du
+    // même service : titre restaurant ventilé au mauvais endroit, par
+    // exemple. Sans ce total, l'application signale une perte là où il n'y
+    // a qu'une erreur de saisie entre deux caisses.
+    const parShift = {};
+    shifts.forEach(x => parShift[`${x.date_fiscale}|${x.shift}`] = x);
+
+    const visibles = brutes
+      .filter(s => !ctx.masques.includes(s.badge_code)
+                && !ctx.masques.includes(s.responsable))
+      .map(function (s) {
+        const sh = parShift[`${s.date_fiscale}|${s.shift}`] || null;
+        const service = sh ? Number(sh.ecart_global) : null;
+        const manquant = Math.abs(Number(s.ecart_especes) || 0);
+        return { ...s,
+          service_ecart: service,
+          service_caisses: sh ? sh.caisses : null,
+          service_lecture: service === null ? null
+            : Math.abs(service) < 10 ? "REPRIS"
+            : Math.abs(service) < manquant * 0.5 ? "PARTIEL"
+            : "MANQUE" };
+      });
+
     return {
       mois: m, mois_disponibles: moisDispo, noms,
       sessions: visibles.filter(s => !s.compense),
