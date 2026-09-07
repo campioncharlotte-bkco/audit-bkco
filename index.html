@@ -422,8 +422,7 @@ function ligneFait(s) {
     '<div id="reg' + id + '" class="zone" style="border-bottom:1px solid var(--filet)">' +
       '<button style="padding:8px 13px;border-radius:7px;background:var(--profond);' +
         'color:#fff;font-size:13.5px;font-weight:600" onclick="reglements(' +
-        JSON.stringify(JSON.stringify({ c: s.caisse, f: s.fin_session })) +
-        ',\'' + id + '\',this)">Voir les 23 modes de règlement</button></div>' +
+        s.id + ',\'' + id + '\',this)">Voir les 23 modes de règlement</button></div>' +
     '<div id="ctx' + id + '" class="zone" style="border-bottom:1px solid var(--filet)">' +
       '<button style="padding:8px 13px;border-radius:7px;border:1px solid var(--filet);' +
         'font-size:13.5px;font-weight:600" ' +
@@ -435,13 +434,12 @@ function ligneFait(s) {
 /* Le tableau des règlements est celui que le directeur connaît déjà : c'est
    l'écran de Cash Système. Y retrouver ses repères vaut mieux que n'importe
    quelle reformulation de ma part. */
-async function reglements(cle, id, bouton) {
-  const p = JSON.parse(cle);
+async function reglements(sessionId, id, bouton) {
   const zone = document.getElementById("reg" + id);
   bouton.disabled = true; bouton.textContent = "Lecture…";
   try {
     const d = await api("audit", "reglements",
-      { restaurant_id: E.ec.restaurant_id, caisse: p.c, fin_session: p.f });
+      { restaurant_id: E.ec.restaurant_id, session_id: sessionId });
     if (!d.lignes.length) {
       zone.innerHTML = '<p class="sous" style="margin:0">Aucun détail enregistré pour cette ' +
         'session. Redéposez la Déclaration de caisse du mois pour le récupérer.</p>';
