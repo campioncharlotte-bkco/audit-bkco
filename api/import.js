@@ -146,18 +146,28 @@ async function remplacerAncienDepot(rid, code, debut, fin, saufId, table) {
   return anciens.length;
 }
 
-/* ---------- règlements détaillés de la Déclaration de caisse ---------- */
+/* ---------- Déclaration de caisse, format détaillé par règlement ----------
 
-/* La Déclaration de caisse contient une ligne par session ET par mode de
-   règlement — 23 modes, dont ESPECES, CB, TPE MOBILE, ANCV, CRT et ses cinq
-   marques. Le parser historique n'en retenait que trois, ce qui faisait
-   voir un manquant de 124 € là où le rapport affiche un écart total de
-   0,53 €, les titres restaurant ayant simplement été déclarés sous la
+   Cash Système propose DEUX exports sous le même nom.
+
+   Le format large donne une ligne par session, avec seulement ESPECES, CB
+   et TPE MOBILE — c'est celui que parsers.js sait lire, et qui alimente
+   sessions_caisse depuis le début.
+
+   Le format détaillé donne une ligne par session ET par règlement, soit 23
+   modes : ANCV, CRT et ses cinq marques, CHEQUES, TRD, DIFFERE, NON RENDU,
+   ICOUPON, CLICK COLLECT, les plateformes de livraison. C'est lui qui
+   permet de distinguer un vrai manquant d'une ventilation : sur la caisse
+   192.168.1.3 du 30 août, ESPECES affiche −155,43 € mais le TOTAL de la
+   caisse est à −0,53 €, des titres restaurant ayant été déclarés sous la
    mauvaise marque.
 
-   Cette lecture est écrite ici plutôt que dans parsers.js à dessein : ce
-   fichier porte les douze formats d'export et n'est pas reproductible,
-   je préfère ne pas y toucher pour une capture supplémentaire. */
+   Il est traité ici et non dans parsers.js pour deux raisons. Son en-tête
+   déclare 12 colonnes quand les lignes en comptent 16 : la lecture par nom
+   de colonne serait décalée d'un rang. Et parsers.js porte les douze
+   formats d'export, il n'est pas reproductible, je préfère ne pas y
+   toucher pour un cas particulier.
+   ------------------------------------------------------------------- */
 
 const COL = { badge: 3, valide_par: 5, caisse: 6, reglement: 7,
               theorique: 8, declare: 9, fin_session: 11, ecart: 15 };
@@ -170,34 +180,37 @@ function normaliserCaisse(v) {
   return m ? `192.168.${m[1]}.${m[2]}` : t;
 }
 
-const nombre = v => {
-  const t = String(v ?? "").trim().replace(/"/g, "").replace(/\s/g, "").replace(",", ".");
+const nombreFr = v => {
+  const t = String(v ?? "").trim().replace(/"/g, "").replace(/\s|\u00a0/g, "").replace(",", ".");
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 };
 
-// Découpage d'une ligne CSV point-virgule, guillemets compris.
+// Découpage point-virgule, guillemets compris. On garde les positions :
+// c'est tout l'intérêt ici.
 function champs(ligne) {
-  const out = []; let cour = "", dansGuillemets = false;
+  const out = []; let cour = "", guill = false;
   for (let i = 0; i < ligne.length; i++) {
     const c = ligne[i];
-    if (c === '"') { dansGuillemets = !dansGuillemets; continue; }
-    if (c === ";" && !dansGuillemets) { out.push(cour); cour = ""; continue; }
+    if (c === '"') { guill = !guill; continue; }
+    if (c === ";" && !guill) { out.push(cour); cour = ""; continue; }
     cour += c;
   }
   out.push(cour);
   return out;
 }
 
-function extraireReglements(contenu, restaurant_id, import_id) {
-  const lignes = String(contenu).split(/\r?\n/).filter(l => l.trim());
-  if (!lignes.length) return [];
-  const entete = lignes[0].toUpperCase();
-  if (entete.indexOf("REGLEMENT") < 0 || entete.indexOf("MONTANT_THEORIQUE") < 0) return [];
+function estFormatReglements(contenu) {
+  const premiere = String(contenu).split(/\r?\n/)[0].toUpperCase();
+  return premiere.indexOf("REGLEMENT") >= 0
+      && premiere.indexOf("MONTANT_THEORIQUE") >= 0
+      && premiere.indexOf("MONTANT_DECLARE") >= 0;
+}
 
-  const vues = new Set();
-  const out = [];
+function lireReglements(contenu, restaurant_id) {
+  const lignes = String(contenu).replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim());
+  const vues = new Set(), out = [];
   for (const l of lignes.slice(1)) {
     const c = champs(l);
     if (c.length < 16) continue;
@@ -205,32 +218,79 @@ function extraireReglements(contenu, restaurant_id, import_id) {
     const fin = String(c[COL.fin_session] || "").trim();
     const caisse = normaliserCaisse(c[COL.caisse]);
     if (!reglement || !fin || !caisse) continue;
-    // le fichier peut contenir deux fois la même clé si un mois est exporté
-    // à cheval : on garde la première occurrence
     const cle = `${caisse}|${fin}|${reglement}`;
     if (vues.has(cle)) continue;
     vues.add(cle);
-    const theorique = nombre(c[COL.theorique]);
-    const declare = nombre(c[COL.declare]);
-    out.push({
-      import_id, restaurant_id, caisse, fin_session: fin,
+    const theorique = nombreFr(c[COL.theorique]);
+    const declare = nombreFr(c[COL.declare]);
+    out.push({ restaurant_id: Number(restaurant_id), caisse, fin_session: fin,
       badge_code: normaliserIdentite(c[COL.badge]),
       valide_par: normaliserIdentite(c[COL.valide_par]),
       reglement, theorique, declare,
-      ecart: nombre(c[COL.ecart]) ??
-             (declare !== null && theorique !== null ? Math.round((declare - theorique) * 100) / 100
-                                                     : null)
-    });
+      ecart: nombreFr(c[COL.ecart]) ??
+             (declare !== null && theorique !== null
+               ? Math.round((declare - theorique) * 100) / 100 : null) });
   }
   return out;
 }
 
-/* ---------- dépôt ---------- */
+async function deposerReglements({ contenu, nom_fichier, restaurant_id }, ctx) {
+  if (!ctx.depot.includes(Number(restaurant_id)))
+    return { erreur: "Vous ne pouvez pas déposer pour ce restaurant." };
+
+  const lignes = lireReglements(contenu, restaurant_id);
+  if (!lignes.length)
+    return { erreur: "Aucune ligne de règlement lisible dans ce fichier." };
+
+  const hash = crypto.createHash("sha256").update(contenu).digest("hex");
+  const [doublon] = await sb(`imports?restaurant_id=eq.${restaurant_id}`
+    + `&fichier_hash=eq.${hash}&statut=eq.OK&select=id,depose_le&limit=1`);
+  if (doublon) return { erreur: `Fichier déjà déposé le ${doublon.depose_le.slice(0, 10)}.` };
+
+  const jours = lignes.map(l => l.fin_session.slice(0, 10)).sort();
+  const debut = jours[0], fin = jours[jours.length - 1];
+
+  const [imp] = await sb("imports", { method: "POST", body: JSON.stringify({
+    restaurant_id: Number(restaurant_id), type_rapport_code: "DECLARATION_REGLEMENTS",
+    periode_debut: debut, periode_fin: fin, fichier_nom: nom_fichier,
+    fichier_hash: hash, nb_lignes: lignes.length, nature: "COURANT",
+    statut: "OK", depose_par: ctx.id }) });
+
+  try {
+    // un redépôt remplace le précédent au lieu de s'y ajouter
+    const anciens = await sb(`imports?restaurant_id=eq.${restaurant_id}`
+      + `&type_rapport_code=eq.DECLARATION_REGLEMENTS&periode_debut=eq.${debut}`
+      + `&periode_fin=eq.${fin}&id=neq.${imp.id}&select=id`);
+    if (anciens.length)
+      await sb(`imports?id=in.(${anciens.map(a => a.id).join(",")})`,
+        { method: "DELETE", prefer: "return=minimal" });
+
+    const avecImport = lignes.map(l => ({ ...l, import_id: imp.id }));
+    for (let i = 0; i < avecImport.length; i += 500)
+      await sb("reglements_session", { method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(avecImport.slice(i, i + 500)) });
+
+    const modes = [...new Set(lignes.map(l => l.reglement))].length;
+    return { ok: true, import_id: imp.id, type: "DECLARATION_REGLEMENTS",
+             nb: lignes.length, modes, periode: [debut, fin] };
+  } catch (e) {
+    await marquerRejete(imp.id, e.message || e, "reglements_session");
+    return { erreur: "Dépôt interrompu, rien n'a été conservé. " + String(e.message || e) };
+  }
+}
+
+/* ---------- dépôt ---------- *//* ---------- dépôt ---------- */
 
 async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, periode_fin,
                          nature = "COURANT" }, ctx) {
   if (!ctx.depot.includes(Number(restaurant_id)))
     return { erreur: "Vous ne pouvez pas déposer pour ce restaurant." };
+
+  // Le format détaillé par règlement se reconnaît à son en-tête et se
+  // traite à part : parsers.js ne connaît que le format large.
+  if (estFormatReglements(contenu))
+    return deposerReglements({ contenu, nom_fichier, restaurant_id }, ctx);
 
   const p = parser(contenu, nom_fichier);
   if (p.erreur) return { erreur: p.erreur, entetes: p.entetes };
@@ -328,23 +388,6 @@ async function deposer({ contenu, nom_fichier, restaurant_id, periode_debut, per
             body: JSON.stringify([l]) });
     } else {
       await parLots(p.table, lignes);
-    }
-
-    // Les 23 modes de règlement de la Déclaration de caisse, que le parser
-    // historique laissait tomber.
-    if (p.table === "sessions_caisse") {
-      etape = "enregistrement des modes de règlement";
-      const regl = extraireReglements(contenu, Number(restaurant_id), imp.id);
-      if (regl.length) {
-        await sb(`reglements_session?restaurant_id=eq.${restaurant_id}`
-          + `&fin_session=gte.${debut}T00:00:00&fin_session=lte.${fin}T23:59:59`,
-          { method: "DELETE", prefer: "return=minimal" });
-        for (let i = 0; i < regl.length; i += 500)
-          await sb("reglements_session", { method: "POST",
-            prefer: "resolution=merge-duplicates,return=minimal",
-            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-            body: JSON.stringify(regl.slice(i, i + 500)) });
-      }
     }
 
     etape = "enregistrement des libellés de remise";
