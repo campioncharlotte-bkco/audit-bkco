@@ -412,12 +412,59 @@ function ligneFait(s) {
       (s.echeance_camera ? '<dt>Images disponibles jusqu\'au</dt><dd>' +
         jour(s.echeance_camera) + '</dd>' : '') +
     '</dl></div>' +
+    '<div id="reg' + id + '" class="zone" style="border-bottom:1px solid var(--filet)">' +
+      '<button style="padding:8px 13px;border-radius:7px;background:var(--profond);' +
+        'color:#fff;font-size:13.5px;font-weight:600" onclick="reglements(' +
+        JSON.stringify(JSON.stringify({ c: s.caisse, f: s.fin_session })) +
+        ',\'' + id + '\',this)">Voir les 23 modes de règlement</button></div>' +
     '<div id="ctx' + id + '" class="zone" style="border-bottom:1px solid var(--filet)">' +
-      '<button class="fort" style="padding:8px 13px;border-radius:7px;background:var(--profond);' +
-        'color:#fff;font-size:13.5px;font-weight:600" ' +
+      '<button style="padding:8px 13px;border-radius:7px;border:1px solid var(--filet);' +
+        'font-size:13.5px;font-weight:600" ' +
         'onclick="contexte(' + s.id + ',\'' + id + '\',this)">' +
         'Que s\'est-il passé sur cette caisse ?</button></div>' +
     '</div>';
+}
+
+/* Le tableau des règlements est celui que le directeur connaît déjà : c'est
+   l'écran de Cash Système. Y retrouver ses repères vaut mieux que n'importe
+   quelle reformulation de ma part. */
+async function reglements(cle, id, bouton) {
+  const p = JSON.parse(cle);
+  const zone = document.getElementById("reg" + id);
+  bouton.disabled = true; bouton.textContent = "Lecture…";
+  try {
+    const d = await api("audit", "reglements",
+      { restaurant_id: E.ec.restaurant_id, caisse: p.c, fin_session: p.f });
+    if (!d.lignes.length) {
+      zone.innerHTML = '<p class="sous" style="margin:0">Aucun détail enregistré pour cette ' +
+        'session. Redéposez la Déclaration de caisse du mois pour le récupérer.</p>';
+      return;
+    }
+    zone.innerHTML =
+      '<div style="font-weight:650;font-size:13.5px;margin-bottom:8px">Écart total de la ' +
+        'caisse : ' + eur(d.total) + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<tr style="color:var(--ardoise);text-align:right">' +
+        '<th style="text-align:left;font-weight:600;padding:4px 0">Règlement</th>' +
+        '<th style="font-weight:600">Théorique</th><th style="font-weight:600">Déclaré</th>' +
+        '<th style="font-weight:600">Écart</th></tr>' +
+      d.lignes.map(function (l) {
+        const e = Number(l.ecart) || 0;
+        return '<tr style="text-align:right;border-top:1px solid var(--filet)">' +
+          '<td style="text-align:left;padding:4px 0">' + esc(l.reglement) + '</td>' +
+          '<td class="num">' + eur(l.theorique) + '</td>' +
+          '<td class="num">' + eur(l.declare) + '</td>' +
+          '<td class="num" style="font-weight:650;color:' +
+            (e < -0.01 ? 'var(--rouge)' : e > 0.01 ? 'var(--vert)' : 'inherit') + '">' +
+            eur(l.ecart) + '</td></tr>';
+      }).join("") + '</table>' +
+      '<p class="sous" style="margin:8px 0 0;font-size:12.5px">Un manquant sur une ligne ' +
+        'compensé par un excédent sur une autre est une erreur de déclaration, pas de ' +
+        'l\'argent disparu. REPAS EMPLOYE est un nombre de repas, pas un montant.</p>';
+  } catch (e) {
+    zone.innerHTML = '<div class="alerte erreur" style="margin:0">' + esc(e.message) + '</div>';
+    bouton.disabled = false; bouton.textContent = "Réessayer";
+  }
 }
 
 /* Le contexte se charge au clic, pas avec la liste : sur un mois entier,
