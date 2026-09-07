@@ -239,6 +239,34 @@ const actions = {
     return { ok: true, refermees };
   },
 
+  // Écran d'accueil : un chiffre par restaurant, pour savoir où aller
+  // avant même d'entrer. Une seule requête pour tout le périmètre.
+  async accueil(_, ctx) {
+    if (!ctx.lecture.length) return { restaurants: [] };
+    const f = `restaurant_id=in.(${ctx.lecture.join(",")})`;
+    const depuis = new Date();
+    depuis.setMonth(depuis.getMonth() - 3);
+    const [restos, ecarts] = await Promise.all([
+      sb(`restaurants?id=in.(${ctx.lecture.join(",")})&select=id,nom,code_cash&order=nom`),
+      sb(`v_ecarts_sessions?${f}&compense=is.false`
+        + `&date_fiscale=gte.${depuis.toISOString().slice(0, 10)}`
+        + `&select=restaurant_id,date_fiscale,ecart_mesure,echeance_camera&limit=2000`)
+    ]);
+    const auj = new Date();
+    return {
+      restaurants: restos.map(function (r) {
+        const l = ecarts.filter(e => e.restaurant_id === r.id);
+        const mois = [...new Set(l.map(e => String(e.date_fiscale).slice(0, 7)))].sort().pop();
+        const duMois = l.filter(e => String(e.date_fiscale).slice(0, 7) === mois);
+        return { ...r,
+          dernier_mois: mois || null,
+          ecarts: duMois.length,
+          total: Math.round(duMois.reduce((t, e) => t + Number(e.ecart_mesure || 0), 0) * 100) / 100,
+          urgents: l.filter(e => e.echeance_camera && new Date(e.echeance_camera) >= auj).length };
+      })
+    };
+  },
+
   // Les comptages en manque, et rien d'autre. Un seul dénominateur pour
   // tout l'écran : les sessions dont le manquant espèces dépasse 20 € et
   // n'est pas repris par un autre mode de règlement. Les totaux affichés
