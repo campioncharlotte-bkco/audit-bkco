@@ -304,12 +304,17 @@ const actions = {
   // Le détail des 23 modes de règlement d'une session : exactement le
   // tableau que le directeur a sous les yeux dans Cash Système. C'est là
   // que se lit la différence entre un manquant et une ventilation.
-  async reglements({ restaurant_id, caisse, fin_session }, ctx) {
+  async reglements({ restaurant_id, session_id }, ctx) {
     const rid = Number(restaurant_id);
     if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+    // on repart de l'identifiant de session : faire transiter la caisse et
+    // l'horodatage par un attribut HTML cassait le bouton
+    const [e] = await sb(`v_ecarts_sessions?id=eq.${Number(session_id)}`
+      + `&select=restaurant_id,caisse,fin_session`);
+    if (!e || e.restaurant_id !== rid) throw new Error("Session introuvable");
     const lignes = await sb(`reglements_session?restaurant_id=eq.${rid}`
-      + `&caisse=eq.${encodeURIComponent(caisse)}`
-      + `&fin_session=eq.${encodeURIComponent(fin_session)}`
+      + `&caisse=eq.${encodeURIComponent(e.caisse)}`
+      + `&fin_session=eq.${encodeURIComponent(e.fin_session)}`
       + `&select=*&order=reglement.asc`);
     // on ne montre que ce qui bouge : vingt lignes à zéro n'apprennent rien
     const utiles = lignes.filter(l => Math.abs(Number(l.ecart) || 0) > 0.01
