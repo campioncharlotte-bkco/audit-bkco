@@ -404,6 +404,42 @@ const actions = {
     return { utilisateurs: us, perimetres: ps };
   },
 
+  // Gestion des restaurants. Étaples arrive, et il ne doit pas falloir
+  // passer par l'éditeur SQL pour ouvrir un site.
+  async restaurants(_, ctx) {
+    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
+    const [liste, types] = await Promise.all([
+      sb("restaurants?select=*&order=nom"),
+      sb("restaurants?select=type_implantation")
+    ]);
+    return { restaurants: liste,
+             types: [...new Set(types.map(t => t.type_implantation).filter(Boolean))].sort() };
+  },
+
+  async majRestaurant({ id, code_cash, nom, type_implantation, actif }, ctx) {
+    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
+    if (!nom || !String(nom).trim()) return { erreur: "Le nom est obligatoire." };
+    const corps = { nom: String(nom).trim(),
+                    code_cash: code_cash ? String(code_cash).trim() : null,
+                    type_implantation: type_implantation || null,
+                    actif: actif === undefined ? true : !!actif };
+    if (id) {
+      await sb(`restaurants?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(corps) });
+      return { ok: true, id };
+    }
+    const [r] = await sb("restaurants", { method: "POST", body: JSON.stringify(corps) });
+    // sans périmètre, un restaurant créé reste invisible de tous, y compris
+    // de celui qui vient de le créer : on ouvre l'accès à l'encadrement.
+    const encadrement = await sb(
+      "utilisateurs?role=in.(DG,SUPERVISEUR,CDG)&actif=is.true&select=id,role");
+    if (encadrement.length)
+      await sb("perimetres", { method: "POST", prefer: "return=minimal",
+        body: JSON.stringify(encadrement.map(u => ({
+          utilisateur_id: u.id, restaurant_id: r.id,
+          peut_deposer: true, peut_lire: true, peut_cloturer: true }))) });
+    return { ok: true, id: r.id, perimetres_ouverts: encadrement.length };
+  },
+
   async creerUtilisateur({ nom, email, role, pin, responsable_id, perimetres }, ctx) {
     if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
     if (["DG", "SUPERVISEUR", "CDG"].includes(role) && String(pin).length < 6)
