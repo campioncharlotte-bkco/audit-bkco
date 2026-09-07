@@ -270,6 +270,19 @@ const actions = {
     };
   },
 
+  // Ce qui s'est passé sur la caisse pendant la session où l'argent a
+  // manqué. Chargé au clic, jamais avec la liste : sur un mois entier,
+  // rapatrier le contexte de toutes les sessions serait inutile et lent.
+  async contexte({ session_id, restaurant_id }, ctx) {
+    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
+    const [bornes] = await sb(`v_bornes_session?id=eq.${Number(session_id)}&select=*`);
+    if (!bornes || bornes.restaurant_id !== Number(restaurant_id))
+      throw new Error("Session introuvable");
+    const ops = await sb(`v_operations_session?session_id=eq.${Number(session_id)}`
+      + `&select=*&order=horodate.asc`);
+    return { bornes, operations: ops };
+  },
+
   // Fiche d'un responsable : sa série mensuelle et tous ses comptages en
   // manque. Le taux est le seul chiffre comparable dans le temps — le
   // nombre brut suit le volume de caisses validées, qui varie d'un mois
