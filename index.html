@@ -196,6 +196,9 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
               border-radius:10px;background:var(--card);font-size:13.5px;font-weight:650}
 .bouton-depot:hover{border-color:var(--navy);color:var(--navy)}
 .bouton-depot.fait{border-color:transparent;background:transparent;color:var(--ink-3);font-weight:550}
+/* Glisser-déposer : la case visée s'allume, sinon on ne sait pas où l'on
+   lâche le fichier. */
+.ligne.survol{background:var(--rouge-pale);box-shadow:inset 0 0 0 2px var(--navy)}
 
 .vide{padding:44px 20px;text-align:center;color:var(--ink-3);font-size:14px;line-height:1.5}
 .vide b{display:block;color:var(--ink-2);margin-bottom:6px;font-size:16px;font-weight:650}
@@ -815,7 +818,8 @@ async function vueDepot(params) {
   $("#vue").innerHTML =
     '<h2>Déposer les exports</h2>' +
     '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
-      'en CSV chaque rapport de la liste. La Synthèse CA se dépose telle quelle, en ZIP.</p>' +
+      'en CSV chaque rapport de la liste. Glissez le fichier sur sa ligne, ou cliquez sur ' +
+      'Déposer. La Synthèse CA se dépose telle quelle, en ZIP.</p>' +
     '<div class="pastilles">' + restos.map(r =>
       '<button aria-pressed="' + (r.id === rid) + '" onclick="aller(\'depot\',' +
         '{restaurant_id:' + r.id + ',mois:\'' + mois + '\'})">' + esc(r.nom) +
@@ -836,7 +840,9 @@ async function vueDepot(params) {
 function ligneDepot(t, imp) {
   const id = "d" + t.code;
   const multi = t.code === "SYNTHESE_CA";
-  return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') + '>' +
+  return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') +
+    ' ondragover="glisserSur(event,this)" ondragleave="glisserHors(this)"' +
+    ' ondrop="deposerGlisse(event,this,\'' + t.code + '\',\'' + id + '\')">' +
     '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
     (multi ? ' <span class="etiquette">ZIP ou 9 CSV</span>' : '') + '</div>' +
     '<div class="detail">' +
@@ -847,6 +853,29 @@ function ligneDepot(t, imp) {
     '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
       id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
 }
+
+/* Glisser-déposer sur chaque ligne. Le navigateur ouvre le fichier à la
+   place de la page si on ne l'en empêche pas : d'où le preventDefault sur
+   les trois événements, et pas seulement sur le lâcher. */
+function glisserSur(ev, el) {
+  ev.preventDefault();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+  el.classList.add("survol");
+}
+function glisserHors(el) { el.classList.remove("survol"); }
+
+function deposerGlisse(ev, el, code, id) {
+  ev.preventDefault();
+  el.classList.remove("survol");
+  const f = ev.dataTransfer && ev.dataTransfer.files;
+  if (f && f.length) envoyer(f, code, id);
+}
+
+/* Un fichier lâché à côté d'une case ouvrirait la page dans le navigateur
+   et ferait perdre le travail en cours. On neutralise le reste de la page. */
+["dragover", "drop"].forEach(function (e) {
+  window.addEventListener(e, function (ev) { ev.preventDefault(); });
+});
 
 /* La Synthèse CA par canal se télécharge en archive ZIP contenant ses neuf
    CSV : on l'ouvre dans le navigateur plutôt que de demander à chacun de la
