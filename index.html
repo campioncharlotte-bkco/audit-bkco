@@ -200,6 +200,31 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
    lâche le fichier. */
 .ligne.survol{background:var(--rouge-pale);box-shadow:inset 0 0 0 2px var(--navy)}
 
+/* Écran d'accueil : le restaurant est la clé d'entrée. Une carte par site,
+   avec ce qui attend dedans — sinon il faut ouvrir chacun pour le savoir. */
+.liste-restos{display:flex;flex-direction:column;gap:10px}
+.resto-carte{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+             padding:15px;display:flex;align-items:center;gap:13px;text-align:left;width:100%}
+.resto-carte:active,.resto-carte:hover{background:var(--paper)}
+.resto-pastille{width:44px;height:44px;flex:0 0 44px;border-radius:11px;background:var(--navy);
+                color:#fff;display:flex;align-items:center;justify-content:center;
+                font-weight:800;font-size:13px;letter-spacing:.4px}
+.resto-txt{flex:1;min-width:0}
+.resto-txt b{display:block;font-size:16px;font-weight:650;letter-spacing:-.2px}
+.resto-txt span{font-size:13px;color:var(--ink-3)}
+.resto-chiffre{text-align:right;white-space:nowrap}
+.resto-chiffre b{display:block;font-size:19px;font-weight:750;line-height:1.15;
+                 font-variant-numeric:tabular-nums}
+.resto-chiffre span{font-size:11px;color:var(--ink-3);text-transform:uppercase;
+                    letter-spacing:.4px;font-weight:650}
+.resto-fleche{color:var(--ink-3);font-size:22px;line-height:1}
+@media (min-width:820px){
+  .liste-restos{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+}
+.retour{background:rgba(255,255,255,.14);border:none;color:#fff;width:34px;height:34px;
+        border-radius:9px;font-size:19px;line-height:1;display:none;
+        align-items:center;justify-content:center;flex:0 0 34px}
+
 .vide{padding:44px 20px;text-align:center;color:var(--ink-3);font-size:14px;line-height:1.5}
 .vide b{display:block;color:var(--ink-2);margin-bottom:6px;font-size:16px;font-weight:650}
 .chargement{text-align:center;padding:40px;color:var(--ink-3)}
@@ -224,7 +249,8 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 
 <div id="app">
   <header>
-    <h1>Audit <em>BKCO</em></h1>
+    <button class="retour" id="btn-retour" onclick="retourRestos()">&#8249;</button>
+    <h1 id="titre-entete">Audit <em>BKCO</em></h1>
     <span class="qui" id="qui"></span>
     <button onclick="seDeconnecter()">Fermer</button>
   </header>
@@ -327,11 +353,68 @@ async function demarrer() {
     return '<button data-onglet="' + o[0] + '" onclick="aller(\'' + o[0] + '\')">' +
       '<svg viewBox="0 0 24 24">' + o[2] + '</svg>' + o[1] + '</button>';
   }).join("");
-  aller(E.droits.lecture.length ? "ecarts" : "depot");
+  if (E.droits.lecture.length) retourRestos(); else aller("depot");
+}
+
+/* Le restaurant est la clé d'entrée. Tant qu'aucun n'est choisi, les onglets
+   qui en dépendent n'ont rien à afficher : on montre la liste. */
+const ONGLETS_RESTO = ["ecarts", "depot", "equipe"];
+
+function retourRestos() {
+  E.resto = null;
+  E.onglet = null;
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-current", "false"));
+  majEntete();
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
+  vueRestos().catch(afficherErreur);
+}
+
+function ouvrirResto(id) {
+  E.resto = Number(id);
+  E.ec = null; E.depot = null; E.eq = null;
+  aller("ecarts");
+}
+
+function majEntete() {
+  const b = document.getElementById("btn-retour");
+  const t = document.getElementById("titre-entete");
+  const r = E.resto && (E.restaurants || []).find(x => x.id === E.resto);
+  if (r) { b.style.display = "flex"; t.textContent = r.nom; }
+  else   { b.style.display = "none"; t.innerHTML = 'Audit <em>BKCO</em>'; }
+}
+
+async function vueRestos() {
+  const d = await api("audit", "accueil");
+  const restos = d.restaurants || [];
+  const initiales = n => {
+    const m = String(n).toUpperCase().replace(/[^A-Z ]/g, "").split(" ").filter(Boolean);
+    return m.length > 1 ? m[0][0] + m[1][0] : (m[0] || "?").slice(0, 2);
+  };
+  $("#vue").innerHTML =
+    '<h2>Restaurants</h2>' +
+    '<p class="sous">Choisissez un restaurant pour voir ses écarts, déposer ses exports ou ' +
+      'compléter son équipe. Le chiffre indique les comptages en manque du dernier mois ' +
+      'chargé.</p>' +
+    (restos.length ? '<div class="liste-restos">' + restos.map(function (r) {
+      const sous = !r.dernier_mois ? "aucune donnée chargée"
+        : r.ecarts ? moisLisible(r.dernier_mois + "-01") + " · " + eur0(r.total) +
+            (r.urgents ? " · " + r.urgents + " encore en vidéo" : "")
+        : moisLisible(r.dernier_mois + "-01") + " · rien à vérifier";
+      return '<button class="resto-carte" onclick="ouvrirResto(' + r.id + ')">' +
+        '<span class="resto-pastille">' + esc(initiales(r.nom)) + '</span>' +
+        '<span class="resto-txt"><b>' + esc(r.nom) + '</b><span>' + esc(sous) + '</span></span>' +
+        '<span class="resto-chiffre"><b' + (r.ecarts ? ' class="montant negatif"' : '') + '>' +
+          (r.dernier_mois ? r.ecarts : "—") + '</b><span>à vérifier</span></span>' +
+        '<span class="resto-fleche">&#8250;</span></button>';
+    }).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun restaurant</b>' +
+      'Vous n\'avez pas de droit de lecture.</div></div>');
 }
 
 function aller(onglet, params) {
+  if (ONGLETS_RESTO.indexOf(onglet) >= 0 && !E.resto) return retourRestos();
   E.onglet = onglet;
+  majEntete();
   document.querySelectorAll("#nav button").forEach(function(b){
     b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
   $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
@@ -382,17 +465,6 @@ function etiquetteCamera(reste) {
   return '<span class="etiquette ok">' + reste + ' j de caméra</span>';
 }
 
-/* Tous les restaurants visibles d'un coup, un clic pour changer. Au-delà
-   de dix sites on repassera à une liste déroulante, mais avec sept ou huit
-   les pastilles sont plus rapides et montrent ce qui existe. */
-function pastillesRestos(restos, actif, onglet) {
-  if (restos.length < 2) return "";
-  return '<div class="pastilles">' + restos.map(r =>
-    '<button aria-pressed="' + (r.id === actif) + '" onclick="aller(\'' + onglet +
-      '\',{restaurant_id:' + r.id + ',mois:null})">' + esc(r.nom) + '</button>').join("") +
-  '</div>';
-}
-
 /* Les mois se parcourent dans l'ordre, pas dans un menu : neuf fois sur dix
    on veut le mois d'avant ou celui d'après. */
 function navMois(d, onglet) {
@@ -415,18 +487,15 @@ function navMois(d, onglet) {
 
 async function vueEcarts(params) {
   const p = params || {};
-  const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
-  if (!restos.length) { $("#vue").innerHTML =
-    '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de lecture.</div>'; return; }
-  E.ec = { restaurant_id: p.restaurant_id || (E.ec && E.ec.restaurant_id) || restos[0].id,
+  E.ec = { restaurant_id: E.resto,
            mois: p.mois !== undefined ? p.mois : (E.ec && E.ec.mois) || null };
-  const rid = E.ec.restaurant_id;
+  const rid = E.resto;
 
   const d = await api("audit", "caisses", { restaurant_id: rid, mois: E.ec.mois });
   E.ec.mois = d.mois;
   E.noms = d.noms || {};
 
-  const selecteurs = pastillesRestos(restos, rid, "ecarts") + navMois(d, "ecarts");
+  const selecteurs = navMois(d, "ecarts");
 
   if (!d.mois) { $("#vue").innerHTML = '<h2>Écarts de caisse</h2>' + selecteurs +
     '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
@@ -797,13 +866,11 @@ function bornesMois(mois) {
 }
 
 async function vueDepot(params) {
-  const restos = E.restaurants.filter(r => E.droits.depot.indexOf(r.id) >= 0);
-  if (!restos.length) { $("#vue").innerHTML =
-    '<div class="vide"><b>Aucun restaurant</b>Vous n\'avez pas de droit de dépôt.</div>'; return; }
-  E.depot = {
-    restaurant_id: (params && params.restaurant_id) || (E.depot && E.depot.restaurant_id) || restos[0].id,
-    mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0]
-  };
+  if (E.droits.depot.indexOf(E.resto) < 0) { $("#vue").innerHTML =
+    '<div class="bloc"><div class="vide"><b>Dépôt non autorisé</b>' +
+    'Vous pouvez consulter ce restaurant, pas y déposer d\'exports.</div></div>'; return; }
+  E.depot = { restaurant_id: E.resto,
+    mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0] };
   const rid = E.depot.restaurant_id, mois = E.depot.mois;
   const bornes = bornesMois(mois);
 
@@ -820,12 +887,8 @@ async function vueDepot(params) {
     '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
       'en CSV chaque rapport de la liste. Glissez le fichier sur sa ligne, ou cliquez sur ' +
       'Déposer. La Synthèse CA se dépose telle quelle, en ZIP.</p>' +
-    '<div class="pastilles">' + restos.map(r =>
-      '<button aria-pressed="' + (r.id === rid) + '" onclick="aller(\'depot\',' +
-        '{restaurant_id:' + r.id + ',mois:\'' + mois + '\'})">' + esc(r.nom) +
-      '</button>').join("") + '</div>' +
     '<label class="champ" style="max-width:260px"><span>Période à déposer</span>' +
-      '<select onchange="aller(\'depot\',{restaurant_id:' + rid + ',mois:this.value})">' +
+      '<select onchange="aller(\'depot\',{mois:this.value})">' +
       moisDisponibles().map(o => '<option value="' + o[0] + '"' +
         (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
       '</select></label>' +
@@ -1061,10 +1124,8 @@ function badgeProbable(nomComplet) {
 }
 
 async function vueEquipe(params) {
-  const restos = E.restaurants.filter(r => E.droits.lecture.indexOf(r.id) >= 0);
-  const rid = (params && params.restaurant_id) || (E.eq && E.eq.restaurant_id)
-    || (restos[0] && restos[0].id);
-  if (!rid) { $("#vue").innerHTML = '<div class="vide"><b>Aucun restaurant</b></div>'; return; }
+  const rid = E.resto;
+  if (!rid) return retourRestos();
   E.eq = { restaurant_id: rid };
   const d = await api("audit", "salaries", { restaurant_id: rid });
   E.salaries = d.salaries;
@@ -1073,7 +1134,7 @@ async function vueEquipe(params) {
     '<h2>Équipe</h2>' +
     '<p class="sous">C\'est ici que les badges de caisse deviennent des noms. Tant qu\'un badge ' +
       'n\'est pas renseigné, ses écarts s\'affichent en trigramme illisible.</p>' +
-    pastillesRestos(restos, rid, "equipe") +
+
     ((d.inconnus_encadrants || []).length ? '<div class="bloc">' +
       '<div class="carte-titre">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
       '<div class="note">Ce sont eux qui valident les comptages de caisse. Leur nom complet ' +
