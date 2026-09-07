@@ -270,6 +270,48 @@ const actions = {
     };
   },
 
+  // Fiche d'un responsable : sa série mensuelle et tous ses comptages en
+  // manque. Le taux est le seul chiffre comparable dans le temps — le
+  // nombre brut suit le volume de caisses validées, qui varie d'un mois
+  // à l'autre selon les plannings.
+  async personne({ restaurant_id, code }, ctx) {
+    const rid = Number(restaurant_id);
+    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+    if (ctx.masques.includes(code)) throw new Error("Hors périmètre");
+    const cible = encodeURIComponent(code);
+    const [faits, suivi, ids] = await Promise.all([
+      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&responsable=eq.${cible}`
+        + `&compense=is.false&select=*&order=date_fiscale.desc`),
+      sb(`v_encadrants_mois?restaurant_id=eq.${rid}&responsable=eq.${cible}`
+        + `&select=mois,sessions,nom_affiche&order=mois.asc`),
+      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
+    ]);
+    const noms = {};
+    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
+
+    const serie = suivi.map(function (l) {
+      const duMois = faits.filter(f => String(f.date_fiscale).slice(0, 7) === l.mois.slice(0, 7));
+      const total = duMois.reduce((t, f) => t + Number(f.ecart_especes || 0), 0);
+      return {
+        mois: l.mois,
+        validees: Number(l.sessions) || 0,
+        en_manque: duMois.length,
+        total: Math.round(total * 100) / 100,
+        pire: duMois.length ? Math.min(...duMois.map(f => Number(f.ecart_especes))) : 0,
+        taux: Number(l.sessions) ? Math.round(duMois.length / Number(l.sessions) * 1000) / 10 : null
+      };
+    });
+
+    return {
+      code,
+      nom: (suivi[0] && suivi[0].nom_affiche) || noms[code] || code,
+      serie, noms,
+      faits: faits.slice(0, 60),
+      nb_faits: faits.length,
+      total: Math.round(faits.reduce((t, f) => t + Number(f.ecart_especes || 0), 0) * 100) / 100
+    };
+  },
+
   async ficheSalarie({ restaurant_id, badge_code }, ctx) {
     if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
     if (ctx.masques.includes(badge_code)) throw new Error("Hors périmètre");
