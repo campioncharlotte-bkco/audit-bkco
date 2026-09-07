@@ -245,8 +245,9 @@ function phraseService(s) {
   const e = eur(s.service_ecart), n = s.service_caisses;
   if (s.service_lecture === "REPRIS")
     return "Sur ce service, les " + n + " caisses totalisent " + e + " toutes recettes "
-      + "confondues : ce manquant est repris par une autre caisse. C'est une ventilation "
-      + "à corriger, pas de l'argent disparu.";
+      + "confondues" + (s.service_ecart > 10 ? ", donc en excédent" : "") + " : ce manquant "
+      + "est repris par une autre caisse. C'est une ventilation à corriger, pas de l'argent "
+      + "disparu.";
   if (s.service_lecture === "PARTIEL")
     return "Sur ce service, les " + n + " caisses totalisent " + e + " : le manquant de cette "
       + "caisse est en grande partie repris ailleurs.";
