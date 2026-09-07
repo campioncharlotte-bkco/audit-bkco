@@ -74,6 +74,22 @@ button.ligne:hover{background:var(--papier)}
 .etiquette.expire{background:#f6e6e5;color:var(--rouge)}
 .etiquette.ok{background:#e6efea;color:var(--vert)}
 
+/* Sélecteurs directs : on voit tous les choix, on clique. Un menu
+   déroulant cache l'information et demande deux gestes au lieu d'un. */
+.pastilles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.pastilles button{padding:7px 13px;border-radius:20px;border:1px solid var(--filet);
+  background:var(--surface);font-size:13.5px;font-weight:600;color:var(--ardoise)}
+.pastilles button:hover{border-color:var(--profond)}
+.pastilles button[aria-pressed="true"]{background:var(--profond);border-color:var(--profond);
+  color:#fff}
+.navmois{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.navmois button{width:36px;height:36px;border-radius:9px;border:1px solid var(--filet);
+  background:var(--surface);font-size:17px;line-height:1;color:var(--profond)}
+.navmois button:disabled{opacity:.35;cursor:default}
+.navmois .mois{font-weight:650;font-size:16px;min-width:130px;text-align:center}
+.recherche{width:100%;padding:9px 12px;border:1px solid var(--filet);border-radius:9px;
+  margin-bottom:10px;font-size:14px}
+
 .compteurs{display:flex;border:1px solid var(--filet);border-radius:9px;
   background:var(--surface);margin-bottom:16px;overflow:hidden}
 .compteurs div{flex:1;padding:13px 12px;text-align:center;border-right:1px solid var(--filet)}
@@ -266,6 +282,33 @@ function etiquetteCamera(reste) {
   return '<span class="etiquette ok">' + reste + ' j de caméra</span>';
 }
 
+/* Tous les restaurants visibles d'un coup, un clic pour changer. Au-delà
+   de dix sites on repassera à une liste déroulante, mais avec sept ou huit
+   les pastilles sont plus rapides et montrent ce qui existe. */
+function pastillesRestos(restos, actif, onglet) {
+  if (restos.length < 2) return "";
+  return '<div class="pastilles">' + restos.map(r =>
+    '<button aria-pressed="' + (r.id === actif) + '" onclick="aller(\'' + onglet +
+      '\',{restaurant_id:' + r.id + ',mois:null})">' + esc(r.nom) + '</button>').join("") +
+  '</div>';
+}
+
+/* Les mois se parcourent dans l'ordre, pas dans un menu : neuf fois sur dix
+   on veut le mois d'avant ou celui d'après. */
+function navMois(d, onglet) {
+  const l = (d.mois_disponibles || []).slice().sort();
+  if (!l.length) return "";
+  const i = l.indexOf(d.mois);
+  const bouton = (cible, signe) => '<button ' + (cible ? 'onclick="aller(\'' + onglet +
+    '\',{mois:\'' + cible + '\'})"' : 'disabled') + '>' + signe + '</button>';
+  return '<div class="navmois">' +
+    bouton(i > 0 ? l[i - 1] : null, "‹") +
+    '<span class="mois">' + moisLisible(d.mois) + '</span>' +
+    bouton(i >= 0 && i < l.length - 1 ? l[i + 1] : null, "›") +
+    '<span style="color:var(--ardoise);font-size:13px">' + l.length + ' mois chargés</span>' +
+  '</div>';
+}
+
 /* =====================================================================
    ÉCARTS — l'écran principal
    ===================================================================== */
@@ -283,18 +326,7 @@ async function vueEcarts(params) {
   E.ec.mois = d.mois;
   E.noms = d.noms || {};
 
-  const selecteurs =
-    '<div class="duo">' +
-      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'ecarts\',' +
-        '{restaurant_id:Number(this.value),mois:null})">' +
-        restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
-          '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
-      (d.mois_disponibles.length ? '<label class="champ"><span>Mois</span>' +
-        '<select onchange="aller(\'ecarts\',{mois:this.value})">' +
-        d.mois_disponibles.map(m => '<option value="' + m + '"' +
-          (m === d.mois ? " selected" : "") + '>' + moisLisible(m) + '</option>').join("") +
-        '</select></label>' : '') +
-    '</div>';
+  const selecteurs = pastillesRestos(restos, rid, "ecarts") + navMois(d, "ecarts");
 
   if (!d.mois) { $("#vue").innerHTML = '<h2>Écarts de caisse</h2>' + selecteurs +
     '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
@@ -345,12 +377,16 @@ async function vueEcarts(params) {
         .map(ligneFait).join("") + '</div>' : "") +
 
     (personnes.length ? '<div class="bloc">' +
-      '<div class="entete">Qui a validé ces comptages</div>' +
+      '<div class="entete">Qui a validé ces comptages · ' + personnes.length + '</div>' +
+      (personnes.length > 6 ? '<div class="zone" style="padding-bottom:0">' +
+        '<input class="recherche" placeholder="Filtrer par nom…" ' +
+        'oninput="filtrerPersonnes(this.value)"></div>' : '') +
       '<div class="note">Le responsable est celui qui a compté et validé la caisse. Le nombre ' +
         'de comptages compte davantage que le montant : quelqu\'un qui valide beaucoup de ' +
         'caisses en accumule mécaniquement plus.</div>' +
       personnes.map(function(g){
-        return '<button class="ligne" onclick="vuePersonne(\'' + g.qui + '\')">' +
+        return '<button class="ligne personne" data-nom="' +
+          esc(String(nom(g.qui)).toLowerCase()) + '" onclick="vuePersonne(\'' + g.qui + '\')">' +
           '<div class="corps"><div class="titre">' + esc(nom(g.qui)) + '</div>' +
           '<div class="detail">' + g.n + ' comptage(s) sur ' +
             Object.keys(g.jours).length + ' jour(s) · plus gros ' + eur(g.pire) +
@@ -380,6 +416,13 @@ async function vueEcarts(params) {
 }
 
 const nom = code => (E.noms && E.noms[code]) || code || "non identifié";
+
+function filtrerPersonnes(q) {
+  const t = String(q || "").trim().toLowerCase();
+  document.querySelectorAll(".personne").forEach(function (b) {
+    b.style.display = !t || b.dataset.nom.indexOf(t) >= 0 ? "" : "none";
+  });
+}
 
 function ligneFait(s) {
   const id = "f" + s.id;
@@ -676,17 +719,15 @@ async function vueDepot(params) {
     '<h2>Déposer les exports</h2>' +
     '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
       'en CSV chaque rapport de la liste. La Synthèse CA se dépose telle quelle, en ZIP.</p>' +
-    '<div class="duo">' +
-      '<label class="champ"><span>Restaurant</span><select onchange="aller(\'depot\',' +
-        '{restaurant_id:Number(this.value),mois:\'' + mois + '\'})">' +
-        restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") +
-          '>' + esc(r.nom) + '</option>').join("") + '</select></label>' +
-      '<label class="champ"><span>Période</span><select onchange="aller(\'depot\',' +
-        '{restaurant_id:' + rid + ',mois:this.value})">' +
-        moisDisponibles().map(o => '<option value="' + o[0] + '"' +
-          (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
-        '</select></label>' +
-    '</div>' +
+    '<div class="pastilles">' + restos.map(r =>
+      '<button aria-pressed="' + (r.id === rid) + '" onclick="aller(\'depot\',' +
+        '{restaurant_id:' + r.id + ',mois:\'' + mois + '\'})">' + esc(r.nom) +
+      '</button>').join("") + '</div>' +
+    '<label class="champ" style="max-width:260px"><span>Période à déposer</span>' +
+      '<select onchange="aller(\'depot\',{restaurant_id:' + rid + ',mois:this.value})">' +
+      moisDisponibles().map(o => '<option value="' + o[0] + '"' +
+        (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
+      '</select></label>' +
     '<div class="progression"><div class="jauge"><span id="jauge" style="width:' +
       (E.attendus ? E.faits / E.attendus * 100 : 0) + '%"></span></div>' +
       '<b id="compteur">' + E.faits + ' sur ' + E.attendus + '</b>' +
@@ -906,10 +947,7 @@ async function vueEquipe(params) {
     '<h2>Équipe</h2>' +
     '<p class="sous">C\'est ici que les badges de caisse deviennent des noms. Tant qu\'un badge ' +
       'n\'est pas renseigné, ses écarts s\'affichent en trigramme illisible.</p>' +
-    '<label class="champ"><span>Restaurant</span>' +
-      '<select onchange="aller(\'equipe\',{restaurant_id:Number(this.value)})">' +
-      restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") + '>' +
-        esc(r.nom) + '</option>').join("") + '</select></label>' +
+    pastillesRestos(restos, rid, "equipe") +
     ((d.inconnus_encadrants || []).length ? '<div class="bloc">' +
       '<div class="entete">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
       '<div class="note">Ce sont eux qui valident les comptages de caisse. Leur nom complet ' +
@@ -1023,10 +1061,30 @@ async function supprimer(id) {
 /* ---------- accès ---------- */
 
 async function vueAdmin() {
-  const d = await api("audit", "utilisateurs");
+  const [d, r] = await Promise.all([
+    api("audit", "utilisateurs"),
+    api("audit", "restaurants")
+  ]);
+  E.restos_admin = r.restaurants;
+  E.types_impl = r.types;
   $("#vue").innerHTML =
     '<h2>Accès</h2>' +
     '<p class="sous">Un directeur dépose et consulte son restaurant.</p>' +
+
+    /* Ouvrir un site ne doit pas demander de passer par l'éditeur SQL :
+       Étaples arrive, et il y en aura d'autres. */
+    '<div class="bloc">' +
+      '<div class="entete">Restaurants · ' + r.restaurants.length + '</div>' +
+      r.restaurants.map(x =>
+        '<button class="ligne" onclick="ficheResto(' + x.id + ')">' +
+          '<div class="corps"><div class="titre">' + esc(x.nom) + '</div>' +
+          '<div class="detail">' + esc(x.code_cash || "code Cash Système à préciser") +
+            (x.type_implantation ? ' · ' + esc(x.type_implantation) : '') + '</div></div>' +
+          (x.actif ? '' : '<span class="etiquette">fermé</span>') + '</button>').join("") +
+    '</div>' +
+    '<div class="actions" style="margin-bottom:18px">' +
+      '<button class="fort" onclick="ficheResto(null)">Ouvrir un restaurant</button></div>' +
+    '<div id="form-resto"></div>' +
     '<div class="bloc">' + d.utilisateurs.map(function(u){
       const n = d.perimetres.filter(p => p.utilisateur_id === u.id).length;
       return '<div class="ligne"><div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
@@ -1050,6 +1108,58 @@ async function vueAdmin() {
         '</select></label><div id="err-admin"></div>' +
       '<button class="principal" onclick="creerUtilisateur()">Créer l\'accès</button>' +
     '</div></div>';
+}
+
+function ficheResto(id) {
+  const x = id ? (E.restos_admin.find(r => r.id === id) || {}) : {};
+  document.getElementById("form-resto").innerHTML =
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">' +
+        (id ? "Modifier " + esc(x.nom) : "Ouvrir un restaurant") + '</h3>' +
+      '<label class="champ"><span>Nom</span><input id="r-nom" value="' +
+        esc(x.nom || "") + '" placeholder="ETAPLES"></label>' +
+      '<label class="champ"><span>Code Cash Système</span><input id="r-code" value="' +
+        esc(x.code_cash || "") + '" placeholder="8"></label>' +
+      '<p class="sous" style="margin:-8px 0 14px;font-size:12.5px">Le code qui identifie le ' +
+        'site dans les exports. Sans lui, les dépôts fonctionnent mais aucun contrôle de ' +
+        'provenance n\'est possible.</p>' +
+      '<label class="champ"><span>Type d\'implantation</span>' +
+        '<input id="r-type" list="types-impl" value="' + esc(x.type_implantation || "") + '">' +
+        '<datalist id="types-impl">' + (E.types_impl || []).map(t =>
+          '<option value="' + esc(t) + '">').join("") + '</datalist></label>' +
+      (id ? '<label class="champ"><span>Statut</span><select id="r-actif">' +
+        '<option value="1"' + (x.actif ? " selected" : "") + '>ouvert</option>' +
+        '<option value="0"' + (x.actif ? "" : " selected") + '>fermé</option></select></label>'
+        : '') +
+      '<div id="err-resto"></div>' +
+      '<div class="actions" style="margin-top:0">' +
+        '<button class="fort" onclick="enregistrerResto(' + (id || "null") + ')">' +
+          'Enregistrer</button>' +
+        '<button onclick="document.getElementById(\'form-resto\').innerHTML=\'\'">' +
+          'Annuler</button></div>' +
+    '</div></div>';
+  document.getElementById("form-resto").scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+
+async function enregistrerResto(id) {
+  const nom = $("#r-nom").value.trim();
+  if (!nom) { $("#err-resto").innerHTML =
+    '<div class="alerte erreur">Le nom est obligatoire.</div>'; return; }
+  try {
+    const r = await api("audit", "majRestaurant", { id: id || undefined, nom,
+      code_cash: $("#r-code").value.trim() || null,
+      type_implantation: $("#r-type").value.trim() || null,
+      actif: id ? $("#r-actif").value === "1" : true });
+    // le nouveau site doit apparaître tout de suite dans les sélecteurs
+    const m = await api("audit", "moi");
+    Object.assign(E, m);
+    aller("admin");
+    if (r.perimetres_ouverts)
+      alert("Restaurant ouvert. Accès accordé à " + r.perimetres_ouverts +
+            " personne(s) de l'encadrement. Les directeurs de site restent à ajouter.");
+  } catch (e) {
+    $("#err-resto").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
 }
 
 async function creerUtilisateur() {
