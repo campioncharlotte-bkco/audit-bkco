@@ -910,13 +910,30 @@ async function vueEquipe(params) {
       '<select onchange="aller(\'equipe\',{restaurant_id:Number(this.value)})">' +
       restos.map(r => '<option value="' + r.id + '"' + (r.id === rid ? " selected" : "") + '>' +
         esc(r.nom) + '</option>').join("") + '</select></label>' +
-    ((d.inconnus || []).length ? '<div class="bloc">' +
-      '<div class="entete">Badges vus dans les exports · ' + d.inconnus.length + '</div>' +
-      '<div class="note">Ils apparaissent dans vos données sans être enregistrés ici. ' +
-        'Cliquez pour les compléter.</div>' +
-      d.inconnus.map(b => '<button class="ligne" onclick="fiche(null,\'' + b + '\')">' +
-        '<div class="corps"><div class="titre">' + esc(b) + '</div></div>' +
-        '<span class="etiquette urgent">à compléter</span></button>').join("") + '</div>' : "") +
+    ((d.inconnus_encadrants || []).length ? '<div class="bloc">' +
+      '<div class="entete">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
+      '<div class="note">Ce sont eux qui valident les comptages de caisse. Leur nom complet ' +
+        'figure dans la déclaration, la fiche est déjà pré-remplie : il ne reste qu\'à ' +
+        'confirmer.</div>' +
+      d.inconnus_encadrants.map(e =>
+        '<button class="ligne" onclick="fiche(null,\'' + e.badge_code + '\',\'' +
+          esc(e.nom_propose || "") + '\',\'MANAGER\')">' +
+        '<div class="corps"><div class="titre">' + esc(e.nom_propose || e.badge_code) + '</div>' +
+        '<div class="detail">badge ' + esc(e.badge_code) + '</div></div>' +
+        '<span class="etiquette urgent">à confirmer</span></button>').join("") + '</div>' : "") +
+
+    ((d.inconnus_equipiers || []).length ? '<div class="bloc">' +
+      '<button class="ligne" onclick="basculer(\'equipiers\')">' +
+        '<div class="corps"><div class="titre">' + d.inconnus_equipiers.length +
+          ' équipier(s) non enregistré(s)</div>' +
+        '<div class="detail">Leur nom n\'apparaît nulle part dans les exports, seulement leur ' +
+          'trigramme. À compléter si vous voulez lire leurs noms dans les écarts.</div></div>' +
+        '<span class="etiquette">facultatif</span></button>' +
+      '<div id="equipiers" style="display:none">' +
+        d.inconnus_equipiers.map(b => '<button class="ligne" onclick="fiche(null,\'' + b + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(b) + '</div></div>' +
+          '<span class="etiquette">à compléter</span></button>').join("") +
+      '</div></div>' : "") +
     '<div class="bloc">' +
       '<div class="entete">Enregistrés · ' + d.salaries.length + '</div>' +
       (d.salaries.length ? d.salaries.map(s =>
@@ -934,22 +951,24 @@ async function vueEquipe(params) {
     '<div id="formulaire"></div>';
 }
 
-function fiche(id, badgePropose) {
+function fiche(id, badgePropose, nomPropose, fonctionProposee) {
   const s = id ? (E.salaries.find(x => x.id === id) || {}) : {};
   const badge = badgePropose || s.badge_code || "";
+  const nom = s.nom_complet || nomPropose || "";
+  const fonction = s.fonction || fonctionProposee || "";
   document.getElementById("formulaire").innerHTML =
     '<div class="bloc"><div class="zone">' +
       '<h3 style="margin:0 0 12px;font-size:15px">' +
         (id ? "Modifier " + esc(badge) : badgePropose ? "Compléter " + esc(badgePropose)
                                                       : "Ajouter une personne") + '</h3>' +
       '<label class="champ"><span>Nom et prénom</span><input id="s-nom" value="' +
-        esc(s.nom_complet || "") + '" oninput="proposer()" placeholder="BAUDRY Laurence"></label>' +
+        esc(nom) + '" oninput="proposer()" placeholder="BAUDRY Laurence"></label>' +
       '<label class="champ"><span>Badge en caisse</span><input id="s-badge" value="' +
         esc(badge) + '" placeholder="BAUDLAU"></label>' +
       '<p class="sous" id="s-aide" style="margin:-8px 0 14px;font-size:12.5px"></p>' +
       '<label class="champ"><span>Fonction</span><select id="s-fonction">' +
         '<option value="">à préciser</option>' + FONCTIONS.map(f =>
-          '<option value="' + f + '"' + (s.fonction === f ? " selected" : "") + '>' +
+          '<option value="' + f + '"' + (fonction === f ? " selected" : "") + '>' +
           f.replace("_"," ") + '</option>').join("") + '</select></label>' +
       '<label class="champ"><span>Poste habituel</span><select id="s-poste">' +
         '<option value="">à préciser</option>' + POSTES.map(p =>
