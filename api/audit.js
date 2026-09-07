@@ -239,56 +239,34 @@ const actions = {
     return { ok: true, refermees };
   },
 
-  // Écarts de caisse : trois angles sur la même donnée.
-  //   - par session : le fait daté, avec sa fenêtre caméra ;
-  //   - par caisse  : le TAUX de sessions en écart, pas le cumul — sinon
-  //     la caisse la plus utilisée ressort toujours en tête ;
-  //   - par encadrant : l'écart moyen par session validée, même raison.
-  // Les sessions dont le manquant espèces est repris par la CB ou le TPE
-  // sont renvoyées à part : ce sont des erreurs de saisie, pas des trous.
+  // Les comptages en manque, et rien d'autre. Un seul dénominateur pour
+  // tout l'écran : les sessions dont le manquant espèces dépasse 20 € et
+  // n'est pas repris par un autre mode de règlement. Les totaux affichés
+  // correspondent donc toujours au détail listé en dessous — ce n'était
+  // pas le cas de la version précédente, qui mélangeait deux populations.
   async caisses({ restaurant_id, mois }, ctx) {
-    const restos = restaurant_id && dansPerimetre(ctx, restaurant_id)
-      ? [Number(restaurant_id)] : ctx.lecture;
-    if (!restos.length) return { caisses: [], sessions: [], compensees: [], encadrants: [] };
-    const f = `restaurant_id=in.(${restos.join(",")})`;
-    const [parCaisse, suivi, ecartsEnc, ids] = await Promise.all([
-      sb(`v_caisses_ecarts?${f}&select=*&order=mois.desc`),
-      sb(`v_encadrants_mois?${f}&select=*&order=mois.desc`),
-      sb(`v_encadrants_ecarts?${f}&select=*`),
-      sb(`v_identites?${f}&select=*`)
+    const rid = Number(restaurant_id);
+    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+
+    const [parMois, ids] = await Promise.all([
+      sb(`v_caisses_ecarts?restaurant_id=eq.${rid}&select=mois&order=mois.desc`),
+      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
     ]);
-    const moisDispo = [...new Set([...parCaisse.map(l => l.mois), ...suivi.map(l => l.mois)])]
-      .sort().reverse();
+    const moisDispo = [...new Set(parMois.map(l => l.mois))].sort().reverse();
     const m = mois || moisDispo[0] || null;
     const noms = {};
     ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
+    if (!m) return { mois: null, mois_disponibles: [], noms, sessions: [], compensees: [] };
 
-    let brutes = [];
-    if (m) {
-      brutes = await sb(`v_ecarts_sessions?${f}&date_fiscale=gte.${m.slice(0, 7)}-01`
-        + `&date_fiscale=lte.${finDuMois(m)}&select=*&order=date_fiscale.desc`);
-      brutes = brutes.filter(s => !ctx.masques.includes(s.badge_code)
-                               && !ctx.masques.includes(s.responsable));
-    }
-
+    const brutes = await sb(`v_ecarts_sessions?restaurant_id=eq.${rid}`
+      + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}`
+      + `&select=*&order=ecart_especes.asc`);
+    const visibles = brutes.filter(s => !ctx.masques.includes(s.badge_code)
+                                     && !ctx.masques.includes(s.responsable));
     return {
-      mois: m,
-      mois_disponibles: moisDispo,
-      noms,
-      caisses: parCaisse.filter(l => l.mois === m)
-        .sort((a, b) => (Number(b.taux_lourdes) || 0) - (Number(a.taux_lourdes) || 0)),
-      sessions: brutes.filter(s => !s.compense),
-      compensees: brutes.filter(s => s.compense),
-      encadrants: suivi.filter(l => l.mois === m && !ctx.masques.includes(l.responsable))
-        .map(l => ({
-          ...l,
-          historique: suivi.filter(h => h.responsable === l.responsable
-                                     && h.restaurant_id === l.restaurant_id)
-                           .sort((x, y) => x.mois < y.mois ? -1 : 1),
-          ecarts: ecartsEnc.find(e => e.responsable === l.responsable
-                                   && e.restaurant_id === l.restaurant_id) || null
-        }))
-        .sort((x, y) => (x.ecart_par_session ?? 0) - (y.ecart_par_session ?? 0))
+      mois: m, mois_disponibles: moisDispo, noms,
+      sessions: visibles.filter(s => !s.compense),
+      compensees: visibles.filter(s => s.compense)
     };
   },
 
