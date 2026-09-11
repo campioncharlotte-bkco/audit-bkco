@@ -740,26 +740,46 @@ function rendreContexte(d) {
   const parType = {};
   ops.forEach(function (o) { (parType[o.type] = parType[o.type] || []).push(o); });
 
+  const ligneOp = o =>
+    '<div style="font-size:13px;color:var(--ink-3);padding:3px 0">' +
+      heure(o.horodate) + ' · ' + eur(o.montant) +
+      (o.qui ? ' · ' + esc(nom(o.qui)) : '') +
+      (o.valide_par && o.valide_par !== o.qui ? ' · validé par ' + esc(nom(o.valide_par)) : '') +
+      (o.libelle ? ' · ' + esc(o.libelle) : '') +
+      (o.ticket ? ' · ticket ' + esc(o.ticket) : '') + '</div>';
+
+  /* Les premières lignes sont visibles d'emblée, le reste se déplie. Un
+     « et 4 autres » sur lequel on ne peut pas cliquer est une impasse :
+     quand on regarde les remises d'une session, on veut les voir toutes. */
+  const VISIBLES = 8;
+  let n = 0;
   return '<p class="sous" style="margin:0 0 10px">' + esc(creneau) + ' · ' + ops.length +
       ' opération(s) sur le créneau.</p>' +
     Object.keys(parType).map(function (t) {
       const l = parType[t];
       const total = l.reduce((s, o) => s + Number(o.montant || 0), 0);
+      const cle = "op" + (n++);
+      const reste = l.length - VISIBLES;
       return '<div style="margin-bottom:10px">' +
         '<div style="font-weight:650;font-size:13.5px">' + (MOT_OP[t] || t) + ' · ' +
           l.length + ' · ' + eur(total) + '</div>' +
-        l.slice(0, 12).map(function (o) {
-          return '<div style="font-size:13px;color:var(--ink-3);padding:3px 0">' +
-            heure(o.horodate) + ' · ' + eur(o.montant) +
-            (o.qui ? ' · ' + esc(nom(o.qui)) : '') +
-            (o.valide_par && o.valide_par !== o.qui ? ' · validé par ' + esc(nom(o.valide_par)) : '') +
-            (o.libelle ? ' · ' + esc(o.libelle) : '') +
-            (o.ticket ? ' · ticket ' + esc(o.ticket) : '') + '</div>';
-        }).join("") +
-        (l.length > 12 ? '<div style="font-size:13px;color:var(--ink-3)">et ' +
-          (l.length - 12) + ' autre(s)</div>' : '') +
+        l.slice(0, VISIBLES).map(ligneOp).join("") +
+        (reste > 0
+          ? '<div id="' + cle + '" style="display:none">' +
+              l.slice(VISIBLES).map(ligneOp).join("") + '</div>' +
+            '<button id="b' + cle + '" style="font-size:13px;color:var(--navy);' +
+              'font-weight:650;padding:4px 0" onclick="deplierOps(\'' + cle + '\',' +
+              reste + ')">voir les ' + reste + ' autre(s)</button>'
+          : '') +
       '</div>';
     }).join("");
+}
+
+function deplierOps(cle, reste) {
+  const z = document.getElementById(cle), b = document.getElementById("b" + cle);
+  const ouvert = z.style.display === "none";
+  z.style.display = ouvert ? "block" : "none";
+  b.textContent = ouvert ? "masquer" : "voir les " + reste + " autre(s)";
 }
 
 const heure = t => t ? new Date(t).toLocaleTimeString("fr-FR",
