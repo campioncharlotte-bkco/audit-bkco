@@ -987,21 +987,52 @@ async function vueDepot(params) {
     '<div id="bilan"></div>';
 }
 
+/* Quatre rapports ne portent aucune date : leur période vient de l'écran,
+   pas du fichier. C'est le seul endroit où l'on peut se tromper de mois
+   sans que l'application le voie, donc on le dit. */
+const SANS_DATE = ["FLUX_CAISSIERS_1", "FLUX_CAISSIERS_2", "TICKETS_NON_PAYANTS",
+                   "SYNTHESE_CA", "FLUX_RESP_1"];
+
 function ligneDepot(t, imp) {
   const id = "d" + t.code;
   const multi = t.code === "SYNTHESE_CA";
+  const sansDate = SANS_DATE.indexOf(t.code) >= 0;
   return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') +
     ' ondragover="glisserSur(event,this)" ondragleave="glisserHors(this)"' +
     ' ondrop="deposerGlisse(event,this,\'' + t.code + '\',\'' + id + '\')">' +
     '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
-    (multi ? ' <span class="etiquette">ZIP ou 9 CSV</span>' : '') + '</div>' +
+    (multi ? ' <span class="etiquette">ZIP ou 9 CSV</span>' : '') +
+    (sansDate ? ' <span class="etiquette urgent">mois pris sur l\'écran</span>' : '') + '</div>' +
     '<div class="detail">' +
-    (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes'
+    (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes' +
+           ' · <span style="color:var(--close)">période ' + jour(imp.periode_debut) + ' → ' +
+           jour(imp.periode_fin) + '</span>'
          : esc(t.usage_audit || "à déposer")) + '</div></div>' +
     '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv,.zip" ' +
       'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
-    '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
-      id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button></div>';
+    '<div style="display:flex;flex-direction:column;gap:6px;align-self:center">' +
+      '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
+        id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button>' +
+      (imp ? '<button class="bouton-depot" style="color:var(--close)" onclick="retirerImport(' +
+        imp.id + ')">Retirer</button>' : '') +
+    '</div></div>';
+}
+
+/* Défaire un dépôt : les lignes partent avec lui. C'est le seul remède à
+   un fichier rangé dans le mauvais mois. */
+async function retirerImport(id) {
+  if (!confirm("Retirer ce dépôt ? Les lignes qu'il a créées seront effacées.")) return;
+  try {
+    const d = await api("audit", "retirerImport",
+      { id: id, restaurant_id: E.depot.restaurant_id });
+    aller("depot", { mois: E.depot.mois });
+    setTimeout(function () {
+      const b = document.getElementById("bilan");
+      if (b) b.innerHTML = '<div class="alerte info">Dépôt retiré : ' + esc(d.type) +
+        ', ' + (d.nb_lignes || 0) + ' lignes, période ' + jour(d.periode[0]) + ' → ' +
+        jour(d.periode[1]) + '.</div>';
+    }, 400);
+  } catch (e) { alert(e.message); }
 }
 
 /* Glisser-déposer sur chaque ligne. Le navigateur ouvre le fichier à la
