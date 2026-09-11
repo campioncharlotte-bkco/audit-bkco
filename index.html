@@ -635,12 +635,11 @@ function ligneFait(s) {
       '<dt>Jour</dt><dd>' + jourLong(s.date_fiscale) + '</dd>' +
       (s.total_connu
         ? '<dt>Écart total de la caisse</dt><dd style="font-weight:650">' +
-            eur(s.ecart_total) + ' sur ' + s.modes_en_ecart + ' mode(s) en écart</dd>'
+            eur(s.ecart_total) + ' sur ' + s.modes_en_ecart +
+            (s.modes_en_ecart > 1 ? ' modes' : ' mode') + ' de règlement</dd>'
         : '<dt>Écart total de la caisse</dt><dd>non connu — déposez le détail ' +
             'par règlement</dd>') +
       '<dt>dont espèces</dt><dd>' + eur(s.ecart_especes) + '</dd>' +
-      '<dt>dont carte</dt><dd>' + eur(s.ecart_cb) + '</dd>' +
-      '<dt>dont TPE mobile</dt><dd>' + eur(s.ecart_tpe) + '</dd>' +
       (s.service_ecart !== null && s.service_ecart !== undefined
         ? '<dt>Écart du service entier</dt><dd>' + eur(s.service_ecart) + ' sur ' +
           s.service_caisses + ' caisses</dd>' : '') +
@@ -677,9 +676,14 @@ async function reglements(sessionId, id, bouton) {
         'session. Redéposez la Déclaration de caisse du mois pour le récupérer.</p>';
       return;
     }
+    // Manquants d'un côté, excédents de l'autre : c'est leur coexistence
+    // qui signale une erreur de déclaration. S'il n'y a que des manquants,
+    // parler de compensation n'a aucun sens.
+    const moins = d.lignes.filter(l => Number(l.ecart) < -0.01);
+    const plus  = d.lignes.filter(l => Number(l.ecart) > 0.01);
+    const repas = d.lignes.some(l => l.reglement === "REPAS EMPLOYE");
+
     zone.innerHTML =
-      '<div style="font-weight:650;font-size:13.5px;margin-bottom:8px">Écart total de la ' +
-        'caisse : ' + eur(d.total) + '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
       '<tr style="color:var(--ink-3);text-align:right">' +
         '<th style="text-align:left;font-weight:600;padding:4px 0">Règlement</th>' +
@@ -695,9 +699,19 @@ async function reglements(sessionId, id, bouton) {
             (e < -0.01 ? 'var(--close)' : e > 0.01 ? 'var(--open)' : 'inherit') + '">' +
             eur(l.ecart) + '</td></tr>';
       }).join("") + '</table>' +
-      '<p class="sous" style="margin:8px 0 0;font-size:12.5px">Un manquant sur une ligne ' +
-        'compensé par un excédent sur une autre est une erreur de déclaration, pas de ' +
-        'l\'argent disparu. REPAS EMPLOYE est un nombre de repas, pas un montant.</p>';
+      '<p class="sous" style="margin:8px 0 0;font-size:12.5px">' +
+        (moins.length && plus.length
+          ? 'Un manquant sur une ligne compensé par un excédent sur une autre est une erreur '
+            + 'de déclaration, pas de l\'argent disparu. Ici, ' + moins.length +
+            ' ligne(s) en manque et ' + plus.length + ' en excédent : regardez si les montants '
+            + 'se répondent.'
+          : plus.length
+            ? 'Aucune ligne en manque : la caisse est en excédent.'
+            : moins.length === 1
+              ? 'Un seul mode de règlement est en écart. Rien ne vient le compenser, '
+                + 'l\'argent manque pour de bon.'
+              : moins.length + ' modes en manque, aucun en excédent : rien ne se compense ici.') +
+        (repas ? ' REPAS EMPLOYE est un nombre de repas, pas un montant.' : '') + '</p>';
   } catch (e) {
     zone.innerHTML = '<div class="alerte erreur" style="margin:0">' + esc(e.message) + '</div>';
     bouton.disabled = false; bouton.textContent = "Réessayer";
