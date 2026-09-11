@@ -966,6 +966,7 @@ async function vueDepot(params) {
   d.imports.forEach(function(i){
     if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
   const visibles = d.types.filter(t => t.obligatoire || deposes[t.code]);
+  E.ailleurs = d.ailleurs || {};
   E.attendus = d.types.filter(t => t.obligatoire).length;
   E.faits = d.types.filter(t => t.obligatoire && deposes[t.code]).length;
 
@@ -983,7 +984,8 @@ async function vueDepot(params) {
       (E.attendus ? E.faits / E.attendus * 100 : 0) + '%"></span></div>' +
       '<b id="compteur">' + E.faits + ' sur ' + E.attendus + '</b>' +
       ' rapports déposés pour cette période</div>' +
-    '<div class="bloc">' + visibles.map(t => ligneDepot(t, deposes[t.code])).join("") + '</div>' +
+    '<div class="bloc">' + visibles.map(t => ligneDepot(t, deposes[t.code],
+      E.ailleurs[t.code])).join("") + '</div>' +
     '<div id="bilan"></div>';
 }
 
@@ -993,7 +995,7 @@ async function vueDepot(params) {
 const SANS_DATE = ["FLUX_CAISSIERS_1", "FLUX_CAISSIERS_2", "TICKETS_NON_PAYANTS",
                    "SYNTHESE_CA", "FLUX_RESP_1"];
 
-function ligneDepot(t, imp) {
+function ligneDepot(t, imp, ailleurs) {
   const id = "d" + t.code;
   const multi = t.code === "SYNTHESE_CA";
   const sansDate = SANS_DATE.indexOf(t.code) >= 0;
@@ -1007,14 +1009,23 @@ function ligneDepot(t, imp) {
     (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes' +
            ' · <span style="color:var(--close)">période ' + jour(imp.periode_debut) + ' → ' +
            jour(imp.periode_fin) + '</span>'
-         : esc(t.usage_audit || "à déposer")) + '</div></div>' +
+         : ailleurs
+           ? '<span style="color:var(--vacances)">enregistré sous ' +
+             moisLisible(String(ailleurs.periode_debut).slice(0, 7) + "-01") +
+             ' · ' + ailleurs.nb_lignes + ' lignes. Si ce n\'est pas le bon mois, retirez-le ' +
+             'puis redéposez-le ici.</span>'
+           : esc(t.usage_audit || "à déposer")) + '</div></div>' +
     '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv,.zip" ' +
       'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
     '<div style="display:flex;flex-direction:column;gap:6px;align-self:center">' +
       '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
         id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button>' +
       (imp ? '<button class="bouton-depot" style="color:var(--close)" onclick="retirerImport(' +
-        imp.id + ')">Retirer</button>' : '') +
+        imp.id + ')">Retirer</button>'
+        : ailleurs ? '<button class="bouton-depot" style="color:var(--vacances)" ' +
+            'onclick="retirerImport(' + ailleurs.id + ')">Retirer de ' +
+            moisLisible(String(ailleurs.periode_debut).slice(0, 7) + "-01").split(" ")[0] +
+            '</button>' : '') +
     '</div></div>';
 }
 
