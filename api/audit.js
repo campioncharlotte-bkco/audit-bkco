@@ -192,6 +192,33 @@ const actions = {
     };
   },
 
+  // Retirer un dépôt. Indispensable : la période des rapports non datés
+  // vient de l'écran de dépôt, donc une erreur de mois est possible, et
+  // il ne faut pas avoir à passer par l'éditeur SQL pour la défaire.
+  async retirerImport({ id, restaurant_id }, ctx) {
+    const rid = Number(restaurant_id);
+    if (!ctx.depot.includes(rid)) return { erreur: "Dépôt non autorisé sur ce restaurant." };
+    const [imp] = await sb(`imports?id=eq.${Number(id)}&select=*`);
+    if (!imp || imp.restaurant_id !== rid) return { erreur: "Dépôt introuvable." };
+
+    // Les lignes partent avec l'import par clé étrangère. Les tables
+    // mensuelles cumulées (flux caissiers, tickets non payants) sont
+    // alimentées en upsert par mois et par badge : on les efface
+    // explicitement, sinon elles survivraient à la suppression.
+    const mois = String(imp.periode_debut).slice(0, 8) + "01";
+    const cumulees = { FLUX_CAISSIERS_1: "flux_caissiers", FLUX_CAISSIERS_2: "flux_caissiers",
+                       TICKETS_NON_PAYANTS: "tickets_non_payants",
+                       FLUX_RESP_1: "flux_responsables" };
+    const table = cumulees[imp.type_rapport_code];
+    if (table)
+      await sb(`${table}?restaurant_id=eq.${rid}&mois=eq.${mois}`,
+        { method: "DELETE", prefer: "return=minimal" });
+
+    await sb(`imports?id=eq.${Number(id)}`, { method: "DELETE", prefer: "return=minimal" });
+    return { ok: true, type: imp.type_rapport_code, nb_lignes: imp.nb_lignes,
+             periode: [imp.periode_debut, imp.periode_fin] };
+  },
+
   // Libellés de remise. Sans ce garde-fou, la roulette drive de juin 2026
   // aurait déclenché une alerte rouge à tort. Une qualification doit rester
   // révisable : on se trompe, et un libellé change de sens d'une opération
