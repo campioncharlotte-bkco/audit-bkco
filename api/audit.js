@@ -185,8 +185,23 @@ const actions = {
       sb(`imports?restaurant_id=in.(${restos.join(",")})&periode_debut=lte.${fin}`
         + `&periode_fin=gte.${debut}&select=*&order=depose_le.desc`)
     ]);
+    // Un rapport absent de ce mois peut très bien être enregistré sous un
+    // autre : c'est le cas des quatre rapports non datés, dont la période
+    // vient de l'écran de dépôt. Sans cette information, la ligne propose
+    // un dépôt que l'empreinte refusera, sans dire pourquoi.
+    const ailleurs = {};
+    if (restos.length === 1) {
+      const autres = await sb(`imports?restaurant_id=eq.${restos[0]}&statut=eq.OK`
+        + `&or=(periode_debut.gt.${fin},periode_fin.lt.${debut})`
+        + `&select=id,type_rapport_code,periode_debut,periode_fin,nb_lignes`
+        + `&order=periode_debut.desc&limit=200`);
+      autres.forEach(function (i) {
+        if (!ailleurs[i.type_rapport_code]) ailleurs[i.type_rapport_code] = i;
+      });
+    }
+
     return {
-      types, imports,
+      types, imports, ailleurs,
       manquants: types.filter(t => t.obligatoire &&
         !imports.some(i => i.type_rapport_code === t.code && i.statut === "OK"))
     };
