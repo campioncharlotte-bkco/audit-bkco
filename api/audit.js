@@ -1,717 +1,1538 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Audit BKCO</title>
+
+<!-- Ajout à l'écran d'accueil : l'app s'ouvre en plein écran, sans barre de navigateur -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Audit">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#B62123">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+<style>
+/* ===================================================================
+   1. TOKENS — charte BKCO, communs à Planning, Reporting et Audit
+   =================================================================== */
+:root{
+  /* Rouge BKCO, relevé sur le logo. Il porte l'identité : bandeau,
+     onglet actif, écran d'accès. */
+  --navy:#B62123;      --navy-2:#9A1A1D;   --navy-3:#C9494B;
+  /* Ambre : appels à l'action et avertissements. Jamais l'identité. */
+  --orange:#D97706;    --orange-pale:#FDF1E1;
+  --rouge-pale:#FBEAEA;
+  --paper:#F4F5F7;     --card:#FFFFFF;
+  --ink:#111827;       --ink-2:#4B5563;    --ink-3:#9AA3AF;
+  --line:#E2E5EA;
+
+  --open:#1B7943;      --open-bg:#E2F4E9;
+  --close:#C0372D;     --close-bg:#FCE9E7;
+  --vacances:#9C5D00;  --vacances-bg:#FCEFD9;
+  --off:#646B78;       --off-bg:#EDEFF2;
+
+  --r:12px;
+  --bas:calc(58px + env(safe-area-inset-bottom));
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Inter",sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:15px;
+     -webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;
+       color:inherit}
+input,select{font-family:inherit;font-size:16px}  /* 16px : évite le zoom auto iOS */
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+/* ===================================================================
+   2. ÉCRAN D'ACCÈS
+   =================================================================== */
+#connexion{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;
+           justify-content:center;z-index:100;padding:24px}
+.carte-connexion{background:var(--card);border-radius:16px;padding:34px 26px;width:100%;
+                 max-width:330px;text-align:center}
+.sigle{background:var(--navy);color:#fff;width:66px;height:66px;border-radius:16px;
+       margin:0 auto 15px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;font-weight:800;font-size:16px;letter-spacing:.5px;line-height:1.1}
+.sigle span{font-size:9px;font-weight:700;letter-spacing:1px;margin-top:3px;
+            border-top:1.5px solid #fff;padding-top:3px}
+.carte-connexion h1{font-size:21px;letter-spacing:-.4px;margin-bottom:4px}
+.carte-connexion p{color:var(--ink-3);font-size:14px;margin-bottom:24px}
+.carte-connexion .champ{text-align:left;margin-bottom:12px}
+.principal{width:100%;padding:14px;background:var(--navy);color:#fff;border-radius:10px;
+           font-weight:600;font-size:16px}
+.principal:disabled{background:var(--ink-3)}
+
+/* ===================================================================
+   3. STRUCTURE
+   =================================================================== */
+#app{display:none;padding-bottom:var(--bas)}
+
+header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:40;
+       padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+       display:flex;align-items:center;gap:12px;min-height:34px}
+header h1{font-size:17px;font-weight:600;letter-spacing:-.2px;flex:1;
+          color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header h1 em{font-style:normal;color:#fff;font-weight:800;letter-spacing:.4px}
+header .qui{font-size:13px;color:rgba(255,255,255,.72)}
+header button{background:none;border:1px solid rgba(255,255,255,.25);color:#fff;
+              padding:6px 11px;border-radius:8px;font-size:13px}
+
+main{padding:14px;max-width:900px;margin:0 auto}
+h2{font-size:20px;font-weight:700;letter-spacing:-.4px;margin-bottom:6px}
+.sous{color:var(--ink-3);font-size:13.5px;line-height:1.5;margin-bottom:16px}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(255,255,255,.96);
+    backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;
+    padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:8px 2px 9px;display:flex;flex-direction:column;align-items:center;
+           gap:3px;color:var(--ink-3);font-size:10.5px;font-weight:600}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;
+               stroke-linecap:round;stroke-linejoin:round}
+nav button[aria-current="page"]{color:var(--navy)}
+
+@media (min-width:820px){
+  :root{--bas:0px}
+  #app{padding-bottom:0}
+  header{padding:12px 26px}
+  main{padding:22px 26px}
+  nav{position:sticky;top:0;bottom:auto;background:var(--navy);border-top:none;
+      border-bottom:1px solid rgba(255,255,255,.1);padding:0 26px;justify-content:flex-start;
+      gap:4px;max-width:none}
+  nav button{flex:0 0 auto;flex-direction:row;gap:8px;padding:11px 16px;font-size:14px;
+             color:rgba(255,255,255,.72)}
+  nav button svg{width:18px;height:18px}
+  nav button[aria-current="page"]{color:#fff;box-shadow:inset 0 -2px 0 #fff}
+}
+
+/* ===================================================================
+   4. COMPOSANTS
+   =================================================================== */
+.bloc{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+      overflow:hidden;margin-bottom:14px}
+.carte-titre{padding:12px 15px;border-bottom:1px solid var(--line);font-weight:650;
+             font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink-2)}
+.zone{padding:14px}
+
+.ligne{display:flex;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line);
+       align-items:baseline;width:100%;text-align:left;background:none}
+.ligne:last-child{border-bottom:0}
+button.ligne:active,button.ligne:hover{background:var(--paper)}
+.ligne .corps{flex:1;min-width:0}
+.ligne .titre{font-weight:650;font-size:15px;letter-spacing:-.2px}
+.ligne .detail{color:var(--ink-3);font-size:13px;margin-top:3px;line-height:1.45;
+               word-break:break-word}
+.montant{font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+.montant.negatif{color:var(--close)}
+
+.etiquette{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;
+           background:var(--off-bg);color:var(--off);font-weight:700}
+.etiquette.urgent{background:var(--vacances-bg);color:var(--vacances)}
+.etiquette.expire{background:var(--close-bg);color:var(--close)}
+.etiquette.ok{background:var(--open-bg);color:var(--open)}
+
+/* Sélecteurs directs : on voit tous les choix, on clique. Un menu déroulant
+   cache l'information et demande deux gestes au lieu d'un. */
+.pastilles{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px}
+.pastilles button{border:1px solid var(--line);background:var(--card);border-radius:20px;
+                  padding:8px 15px;font-size:13px;font-weight:650;color:var(--ink-2);
+                  text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.pastilles button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+
+.navmois{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.navmois button{width:38px;height:38px;flex:0 0 38px;border:1px solid var(--line);
+                background:var(--card);border-radius:10px;font-size:18px;line-height:1;
+                color:var(--ink-2)}
+.navmois button:disabled{opacity:.35;cursor:default}
+.navmois .mois{font-weight:650;font-size:15px;min-width:128px;text-align:center}
+.navmois .mois::first-letter{text-transform:uppercase}
+.recherche{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+           margin-bottom:10px;background:var(--card)}
+
+/* Chiffres de tête : le repère qu'on lit avant tout le reste */
+.compteurs{display:flex;gap:11px;margin-bottom:14px;flex-wrap:wrap}
+.compteurs div{flex:1;min-width:118px;background:var(--card);border:1px solid var(--line);
+               border-radius:11px;padding:12px 14px;text-align:left}
+.compteurs b{display:block;font-size:22px;line-height:1.15;font-variant-numeric:tabular-nums;
+             color:var(--navy);font-weight:750}
+.compteurs b.montant.negatif{color:var(--close)}
+.compteurs span{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.4px;
+                font-weight:650}
+
+.note{padding:12px 14px;background:var(--card);border-left:3px solid var(--navy-3);
+      border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.55;color:var(--ink-2)}
+.alerte{padding:12px 14px;border-radius:10px;font-size:13.5px;line-height:1.55;margin-bottom:12px;
+        background:var(--card);border:1px solid var(--line);border-left:3px solid var(--navy-3)}
+.alerte.erreur{border-left-color:var(--close);background:var(--close-bg);color:var(--close)}
+.alerte.info{border-left-color:var(--navy-3)}
+
+.champ{display:block;margin-bottom:14px}
+.champ span{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;
+            color:var(--ink-3);font-weight:700;margin-bottom:7px}
+.champ input,.champ select{width:100%;padding:12px;border:1px solid var(--line);
+                           border-radius:10px;background:var(--card)}
+.champ input:focus,.champ select:focus{outline:2px solid var(--navy);outline-offset:-1px}
+.duo{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.duo .champ{flex:1;min-width:170px;margin:0}
+
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:15px}
+.actions button{padding:11px 16px;border-radius:10px;border:1px solid var(--line);
+                background:var(--card);font-size:14px;font-weight:600;color:var(--ink)}
+.actions button.fort{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:13.5px}
+dt{color:var(--ink-3)}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+
+.progression{margin-bottom:14px;font-size:13.5px;color:var(--ink-3)}
+.progression b{color:var(--ink)}
+.jauge{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.jauge span{display:block;height:100%;background:var(--navy);transition:width .3s}
+.bouton-depot{flex:0 0 auto;align-self:center;padding:9px 15px;border:1px solid var(--line);
+              border-radius:10px;background:var(--card);font-size:13.5px;font-weight:650}
+.bouton-depot:hover{border-color:var(--navy);color:var(--navy)}
+.bouton-depot.fait{border-color:transparent;background:transparent;color:var(--ink-3);font-weight:550}
+/* Glisser-déposer : la case visée s'allume, sinon on ne sait pas où l'on
+   lâche le fichier. */
+.ligne.survol{background:var(--rouge-pale);box-shadow:inset 0 0 0 2px var(--navy)}
+
+/* Écran d'accueil : le restaurant est la clé d'entrée. Une carte par site,
+   avec ce qui attend dedans — sinon il faut ouvrir chacun pour le savoir. */
+.liste-restos{display:flex;flex-direction:column;gap:10px}
+.resto-carte{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+             padding:15px;display:flex;align-items:center;gap:13px;text-align:left;width:100%}
+.resto-carte:active,.resto-carte:hover{background:var(--paper)}
+.resto-pastille{width:44px;height:44px;flex:0 0 44px;border-radius:11px;background:var(--navy);
+                color:#fff;display:flex;align-items:center;justify-content:center;
+                font-weight:800;font-size:13px;letter-spacing:.4px}
+.resto-txt{flex:1;min-width:0}
+.resto-txt b{display:block;font-size:16px;font-weight:650;letter-spacing:-.2px}
+.resto-txt span{font-size:13px;color:var(--ink-3)}
+.resto-chiffre{text-align:right;white-space:nowrap}
+.resto-chiffre b{display:block;font-size:19px;font-weight:750;line-height:1.15;
+                 font-variant-numeric:tabular-nums}
+.resto-chiffre span{font-size:11px;color:var(--ink-3);text-transform:uppercase;
+                    letter-spacing:.4px;font-weight:650}
+.resto-fleche{color:var(--ink-3);font-size:22px;line-height:1}
+@media (min-width:820px){
+  .liste-restos{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+}
+.retour{background:rgba(255,255,255,.14);border:none;color:#fff;width:34px;height:34px;
+        border-radius:9px;font-size:19px;line-height:1;display:none;
+        align-items:center;justify-content:center;flex:0 0 34px}
+
+.vide{padding:44px 20px;text-align:center;color:var(--ink-3);font-size:14px;line-height:1.5}
+.vide b{display:block;color:var(--ink-2);margin-bottom:6px;font-size:16px;font-weight:650}
+.chargement{text-align:center;padding:40px;color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<section id="connexion">
+  <form class="carte-connexion" onsubmit="seConnecter(event)">
+    <div class="sigle">BKCO<span>AUDIT</span></div>
+    <h1>Audit</h1>
+    <p>Écarts de caisse à vérifier</p>
+    <div id="err-connexion"></div>
+    <label class="champ"><span>Adresse e-mail</span>
+      <input id="email" type="email" autocomplete="username" required></label>
+    <label class="champ"><span>Code</span>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required></label>
+    <button class="principal" id="btn-connexion">Se connecter</button>
+  </form>
+</section>
+
+<div id="app">
+  <header>
+    <button class="retour" id="btn-retour" onclick="retourRestos()">&#8249;</button>
+    <h1 id="titre-entete">Audit <em>BKCO</em></h1>
+    <span class="qui" id="qui"></span>
+    <button onclick="seDeconnecter()">Fermer</button>
+  </header>
+  <nav id="nav"></nav>
+  <main id="vue"></main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+
 /* =====================================================================
-   AUDIT BKCO — api/audit.js
-   Toutes les lectures passent ici. Le navigateur n'accède jamais à
-   Supabase en direct : c'est ce qui rend le cloisonnement réel plutôt
-   que cosmétique. Chaque requête applique le périmètre hiérarchique et
-   masque les anomalies portant sur le badge de l'utilisateur ou de sa
-   hiérarchie ascendante.
+   AUDIT BKCO — version 2
+   Cette version ne rend aucun verdict. Elle affiche des faits, triés par
+   ce qui expire en premier, parce que la seule contrainte réelle est la
+   rétention de 14 jours des caméras.
+
+   Décision assumée : pas de score, pas de couleur par personne, pas de
+   moyenne par caisse. La version précédente calculait un manquant moyen
+   par comptage — un écart de 124 € noyé dans 56 comptages devenait 2,20 €
+   et disparaissait. Une moyenne dilue exactement ce qu'on cherche.
+   On compte donc des événements, on les additionne, et on montre le plus
+   gros. Le jugement appartient au superviseur.
    ===================================================================== */
 
-const crypto = require("crypto");
-const URL_SB = process.env.SUPABASE_URL;
-const KEY_SB = process.env.SUPABASE_SERVICE_KEY;
+const E = {};
 
-/* ---------- accès Supabase ---------- */
+/* Icônes de la barre d'onglets, au trait, comme dans les autres apps BKCO. */
+const ICONES = {
+  ecarts:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>'
+         + '<path d="M12 9v4"/><path d="M12 17h.01"/>',
+  depot:   '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/>'
+         + '<path d="M12 15V3"/>',
+  remises: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/>'
+         + '<circle cx="17.5" cy="17.5" r="2.5"/>',
+  encadrants: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'
+         + '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  equipe:  '<rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8.5" cy="11" r="2.5"/>'
+         + '<path d="M4.5 17.5c.8-1.7 2.3-2.5 4-2.5s3.2.8 4 2.5"/><path d="M15 9h4"/>'
+         + '<path d="M15 13h4"/>',
+  acces:   '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8'
+         + 'l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4'
+         + 'a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1'
+         + 'H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1'
+         + 'a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3'
+         + 'l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1'
+         + 'a1.6 1.6 0 0 0-1.5 1z"/>'
+};
+const $ = s => document.querySelector(s);
+const eur = n => (n === null || n === undefined ? "—" :
+  Number(n).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €");
+const eur0 = n => (n === null || n === undefined ? "—" :
+  Math.round(Number(n)).toLocaleString("fr-FR") + " €");
+const jour = d => d ? new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}) : "—";
+const jourLong = d => d ? new Date(d).toLocaleDateString("fr-FR",
+  {weekday:"long",day:"2-digit",month:"long"}) : "—";
+const esc = s => String(s ?? "").replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+const MOIS_FR = ["janvier","février","mars","avril","mai","juin",
+                 "juillet","août","septembre","octobre","novembre","décembre"];
+const moisLisible = m => m ? MOIS_FR[Number(m.slice(5,7)) - 1] + " " + m.slice(0,4) : "";
 
-async function sb(chemin, options = {}) {
-  const r = await fetch(`${URL_SB}/rest/v1/${chemin}`, {
-    ...options,
-    headers: {
-      apikey: KEY_SB, Authorization: `Bearer ${KEY_SB}`,
-      "Content-Type": "application/json",
-      Prefer: options.prefer || "return=representation",
-      ...(options.headers || {})
-    }
+async function api(fichier, action, params = {}) {
+  const r = await fetch("/api/" + fichier, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ action, jeton: E.jeton, ...params })
   });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`Supabase ${r.status} : ${txt.slice(0, 300)}`);
-  return txt ? JSON.parse(txt) : null;
+  const d = await r.json();
+  if (r.status === 401) { seDeconnecter(); throw new Error("Session expirée"); }
+  if (d.erreur) throw new Error(d.erreur);
+  return d;
 }
-const rpc = (fn, args) =>
-  sb(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
 
-/* ---------- jetons de session ---------- */
+/* ---------- connexion ---------- */
 
-const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
-const sign = d => crypto.createHmac("sha256", KEY_SB).update(d).digest("base64url");
-
-function creerJeton(uid, heures = 12) {
-  const p = b64({ uid, exp: Date.now() + heures * 3600e3 });
-  return `${p}.${sign(p)}`;
-}
-function lireJeton(jeton) {
-  if (!jeton || !jeton.includes(".")) return null;
-  const [p, s] = jeton.split(".");
-  if (sign(p) !== s) return null;
+async function seConnecter(ev) {
+  ev.preventDefault();
+  const b = $("#btn-connexion"); b.disabled = true; b.textContent = "Connexion…";
   try {
-    const d = JSON.parse(Buffer.from(p, "base64url").toString());
-    return d.exp > Date.now() ? d : null;
-  } catch { return null; }
-}
-
-/* ---------- contexte de l'utilisateur ---------- */
-
-async function contexte(uid) {
-  const [u] = await sb(`utilisateurs?id=eq.${uid}&select=id,nom,role,email,actif`);
-  if (!u || !u.actif) throw new Error("Utilisateur inactif");
-  const perim = await rpc("perimetre_utilisateur", { uid });
-  const masques = (await rpc("badges_masques", { uid })).map(b => b.badge_code);
-  return {
-    ...u,
-    perimetre: perim,
-    lecture: perim.filter(p => p.peut_lire).map(p => p.restaurant_id),
-    depot: perim.filter(p => p.peut_deposer).map(p => p.restaurant_id),
-    cloture: perim.filter(p => p.peut_cloturer).map(p => p.restaurant_id),
-    masques
-  };
-}
-const dansPerimetre = (ctx, id, droit = "lecture") => ctx[droit].includes(Number(id));
-
-// Dernier jour du mois dont on reçoit le premier jour ('2026-08-01').
-function finDuMois(mois) {
-  const an = Number(mois.slice(0, 4)), m = Number(mois.slice(5, 7));
-  return `${mois.slice(0, 7)}-${String(new Date(an, m, 0).getDate()).padStart(2, "0")}`;
-}
-
-/* ---------- actions ---------- */
-
-const actions = {
-
-  async connexion({ email, pin }) {
-    const [r] = await rpc("verifier_pin", { p_email: email, p_pin: pin });
-    if (r.statut === "VERROUILLE")
-      return { erreur: "Compte verrouillé 15 minutes après 5 tentatives." };
-    if (r.statut !== "OK") return { erreur: "Identifiants incorrects." };
-    return { jeton: creerJeton(r.id), utilisateur: { id: r.id, nom: r.nom, role: r.role } };
-  },
-
-  async moi(_, ctx) {
-    const restos = await sb("restaurants?select=id,code_cash,nom,type_implantation&actif=is.true&order=nom");
-    return {
-      utilisateur: { id: ctx.id, nom: ctx.nom, role: ctx.role },
-      restaurants: restos.filter(r => ctx.lecture.includes(r.id) || ctx.depot.includes(r.id)),
-      droits: { depot: ctx.depot, lecture: ctx.lecture, cloture: ctx.cloture }
-    };
-  },
-
-  // Cockpit : ratios du mois par restaurant, comparés à la moyenne réseau
-  // du même type d'implantation. Les taux sont en base TTC (comme les MN),
-  // les montants en HT.
-  async cockpit({ mois }, ctx) {
-    if (!ctx.lecture.length) return { restaurants: [] };
-    const f = `restaurant_id=in.(${ctx.lecture.join(",")})`;
-    const [ratios, restos, mn, seuils] = await Promise.all([
-      sb(`ratios_mensuels?${f}&mois=eq.${mois}&canal=eq.TOTAL_CPT_DRIVE&select=*`),
-      sb(`restaurants?select=id,nom,type_implantation`),
-      sb(`moyennes_reseau?mois=eq.${mois}&select=*`),
-      sb(`seuils?select=*`)
-    ]);
-    const parResto = new Map(restos.map(r => [r.id, r]));
-    return {
-      mois,
-      seuils,
-      restaurants: ratios.map(r => {
-        const resto = parResto.get(r.restaurant_id);
-        const ref = t => mn.find(m => m.ratio === t &&
-          (m.type_implantation === resto?.type_implantation || m.type_implantation === "TOTAL"))?.valeur ?? null;
-        return { ...r, nom: resto?.nom, type_implantation: resto?.type_implantation,
-                 references: { CO: ref("CO"), ANNULATIONS: ref("ANNULATIONS"),
-                               REMISES_50: ref("REMISES_50"),
-                               CORRECTIONS_COMPTOIR: ref("CORRECTIONS_COMPTOIR"),
-                               CORRECTIONS_DRIVE: ref("CORRECTIONS_DRIVE") } };
-      })
-    };
-  },
-
-  // File d'anomalies, triée par échéance caméra puis par score : ce qui
-  // va expirer d'abord, puisque les images ne sont gardées que 14 jours.
-  async anomalies({ statut = "A_VERIFIER", restaurant_id, frequence }, ctx) {
-    if (!ctx.lecture.length) return { anomalies: [] };
-    const restos = restaurant_id && dansPerimetre(ctx, restaurant_id)
-      ? [Number(restaurant_id)] : ctx.lecture;
-    let q = `anomalies?restaurant_id=in.(${restos.join(",")})&select=*`
-          + `&order=echeance_camera.asc.nullslast,score.desc&limit=300`;
-    if (statut !== "TOUS") q += `&statut=eq.${statut}`;
-    if (frequence) q += `&frequence=eq.${frequence}`;
-    const lignes = await sb(q);
-    // masquage de la chaîne hiérarchique de l'utilisateur
-    const visibles = lignes.filter(a => !a.badge_code || !ctx.masques.includes(a.badge_code));
-    // les rapports mélangent badges et noms complets : on renvoie de quoi
-    // afficher un nom lisible plutôt qu'un trigramme
-    const ids = await sb(`v_identites?restaurant_id=in.(${restos.join(",")})&select=*`);
-    const noms = {};
-    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
-    return { anomalies: visibles, masquees: lignes.length - visibles.length, noms };
-  },
-
-  async anomalie({ id }, ctx) {
-    const [a] = await sb(`anomalies?id=eq.${id}&select=*`);
-    if (!a || !dansPerimetre(ctx, a.restaurant_id)) throw new Error("Hors périmètre");
-    if (a.badge_code && ctx.masques.includes(a.badge_code)) throw new Error("Hors périmètre");
-    const evts = await sb(`anomalie_evenements?anomalie_id=eq.${id}&select=*&order=cree_le.asc`);
-    return { anomalie: a, evenements: evts };
-  },
-
-  // Un directeur documente, il ne clôt pas : seul peut_cloturer autorise
-  // le passage aux statuts finaux.
-  async majAnomalie({ id, statut, commentaire, type = "COMMENTAIRE" }, ctx) {
-    const [a] = await sb(`anomalies?id=eq.${id}&select=*`);
-    if (!a || !dansPerimetre(ctx, a.restaurant_id)) throw new Error("Hors périmètre");
-    const finaux = ["EXPLIQUEE", "CONFIRMEE", "CLASSEE"];
-    if (statut && finaux.includes(statut) && !dansPerimetre(ctx, a.restaurant_id, "cloture"))
-      return { erreur: "Vous pouvez documenter cette anomalie, pas la clore." };
-    if (commentaire)
-      await sb("anomalie_evenements", { method: "POST", body: JSON.stringify(
-        { anomalie_id: Number(id), auteur_id: ctx.id, type, contenu: commentaire }) });
-    if (statut) {
-      const maj = { statut };
-      if (finaux.includes(statut)) { maj.cloture_par = ctx.id; maj.cloture_le = new Date().toISOString(); }
-      await sb(`anomalies?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(maj) });
-      await sb("anomalie_evenements", { method: "POST", body: JSON.stringify(
-        { anomalie_id: Number(id), auteur_id: ctx.id, type: "CHGT_STATUT", contenu: statut }) });
-    }
-    return { ok: true };
-  },
-
-  // État des dépôts : la checklist suit l'ordre du menu AUDIT de Cash Système.
-  async depots({ restaurant_id, debut, fin }, ctx) {
-    const restos = restaurant_id ? [Number(restaurant_id)]
-                                 : [...new Set([...ctx.depot, ...ctx.lecture])];
-    if (!restos.length) return { depots: [] };
-    const [types, imports] = await Promise.all([
-      sb("types_rapport?actif=is.true&select=*&order=ordre_menu"),
-      // chevauchement et non inclusion : une journée fiscale qui déborde sur
-      // le mois suivant rendait l'import invisible dans sa propre checklist
-      sb(`imports?restaurant_id=in.(${restos.join(",")})&periode_debut=lte.${fin}`
-        + `&periode_fin=gte.${debut}&select=*&order=depose_le.desc`)
-    ]);
-    // Quatre rapports ne portent aucune date : leur période vient de
-    // l'écran de dépôt, donc une erreur de mois est possible. On ne le
-    // signale QUE si le mois où ils sont rangés ne contient aucune
-    // déclaration de caisse : sans caisses, ces chiffres ne se rattachent
-    // à rien et le dépôt est presque sûrement égaré.
-    //
-    // Pour les rapports datés, la période est lue dans le fichier : un
-    // dépôt sous mai est un dépôt de mai. Le signaler reviendrait à
-    // proposer de défaire du travail correct — c'est ce que faisait la
-    // première version de ce contrôle.
-    const SANS_DATE = ["FLUX_CAISSIERS_1", "FLUX_CAISSIERS_2", "TICKETS_NON_PAYANTS",
-                       "SYNTHESE_CA", "FLUX_RESP_1"];
-    const ailleurs = {};
-    if (restos.length === 1) {
-      const [autres, moisAvecCaisses] = await Promise.all([
-        sb(`imports?restaurant_id=eq.${restos[0]}&statut=eq.OK`
-          + `&type_rapport_code=in.(${SANS_DATE.join(",")})`
-          + `&or=(periode_debut.gt.${fin},periode_fin.lt.${debut})`
-          + `&select=id,type_rapport_code,periode_debut,periode_fin,nb_lignes`
-          + `&order=periode_debut.desc&limit=200`),
-        sb(`v_caisses_ecarts?restaurant_id=eq.${restos[0]}&select=mois`)
-      ]);
-      const avecCaisses = new Set(moisAvecCaisses.map(m => String(m.mois).slice(0, 7)));
-      autres.forEach(function (i) {
-        const m = String(i.periode_debut).slice(0, 7);
-        if (avecCaisses.has(m)) return;          // mois cohérent, rien à signaler
-        const e = ailleurs[i.type_rapport_code];
-        // la Synthèse CA compte neuf fichiers pour un seul rapport
-        if (!e) ailleurs[i.type_rapport_code] = { ...i, fichiers: 1 };
-        else if (String(e.periode_debut).slice(0, 7) === m) {
-          e.fichiers++;
-          e.nb_lignes = (Number(e.nb_lignes) || 0) + (Number(i.nb_lignes) || 0);
-        }
-      });
-    }
-
-    return {
-      types, imports, ailleurs,
-      manquants: types.filter(t => t.obligatoire &&
-        !imports.some(i => i.type_rapport_code === t.code && i.statut === "OK"))
-    };
-  },
-
-  // Retirer un dépôt. Le retrait porte sur le RAPPORT et le MOIS, pas sur
-  // un identifiant : la Synthèse CA compte neuf fichiers, donc neuf lignes
-  // d'import pour un seul rapport. Retirer la première en laissait huit.
-  async retirerDepot({ restaurant_id, type, mois }, ctx) {
-    const rid = Number(restaurant_id);
-    if (!ctx.depot.includes(rid)) return { erreur: "Dépôt non autorisé sur ce restaurant." };
-    if (!type || !mois) return { erreur: "Rapport ou mois manquant." };
-
-    const debut = String(mois).slice(0, 7) + "-01";
-    const d = new Date(debut);
-    const suivant = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10);
-
-    const cibles = await sb(`imports?restaurant_id=eq.${rid}`
-      + `&type_rapport_code=eq.${encodeURIComponent(type)}`
-      + `&periode_debut=gte.${debut}&periode_debut=lt.${suivant}`
-      + `&select=id,nb_lignes,periode_debut,periode_fin`);
-    if (!cibles.length) return { erreur: "Aucun dépôt à retirer pour ce mois." };
-
-    // Les tables mensuelles cumulées sont alimentées en upsert par mois et
-    // par badge : les lignes ne partent pas avec l'import, il faut les
-    // effacer explicitement.
-    const cumulees = { FLUX_CAISSIERS_1: "flux_caissiers", FLUX_CAISSIERS_2: "flux_caissiers",
-                       TICKETS_NON_PAYANTS: "tickets_non_payants",
-                       FLUX_RESP_1: "flux_responsables" };
-    if (cumulees[type])
-      await sb(`${cumulees[type]}?restaurant_id=eq.${rid}&mois=eq.${debut}`,
-        { method: "DELETE", prefer: "return=minimal" });
-
-    await sb(`imports?id=in.(${cibles.map(c => c.id).join(",")})`,
-      { method: "DELETE", prefer: "return=minimal" });
-
-    return { ok: true, type, mois: debut, fichiers: cibles.length,
-             nb_lignes: cibles.reduce((t, c) => t + (Number(c.nb_lignes) || 0), 0) };
-  },
-
-  // Libellés de remise. Sans ce garde-fou, la roulette drive de juin 2026
-  // aurait déclenché une alerte rouge à tort. Une qualification doit rester
-  // révisable : on se trompe, et un libellé change de sens d'une opération
-  // à l'autre.
-  async libelles({ statut }, ctx) {
-    let q = "libelles_remise?select=*&order=derniere_vue.desc&limit=600";
-    if (statut && statut !== "TOUS") q += `&statut=eq.${statut}`;
-    const libelles = await sb(q);
-    const tous = await sb("libelles_remise?select=statut");
-    const compte = { A_QUALIFIER: 0, AUTORISE: 0, OPERATION: 0, NON_AUTORISE: 0 };
-    tous.forEach(l => { compte[l.statut] = (compte[l.statut] || 0) + 1; });
-    return { libelles, compte };
-  },
-
-  async libellesAQualifier(_, ctx) {
-    return { libelles: await sb(
-      "libelles_remise?statut=eq.A_QUALIFIER&select=*&order=derniere_vue.desc") };
-  },
-
-  async qualifierLibelle({ id, statut, operation_id, neutralise, commentaire }, ctx) {
-    if (!["DG", "SUPERVISEUR", "CDG"].includes(ctx.role))
-      return { erreur: "Réservé à la direction et au contrôle de gestion." };
-    const [maj] = await sb(`libelles_remise?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({
-      statut, operation_id: operation_id || null,
-      neutralise_ratio: !!neutralise, commentaire: commentaire || null,
-      qualifie_par: ctx.id, qualifie_le: new Date().toISOString() }) });
-    // un libellé jugé normal ne doit plus encombrer la file : les écarts
-    // qu'il a produits se referment d'eux-mêmes
-    let refermees = 0;
-    if (maj && ["AUTORISE", "OPERATION"].includes(statut)) {
-      const ouvertes = await sb(`anomalies?statut=eq.A_VERIFIER&ratio=eq.REMISES_50`
-        + `&select=id,pieces`);
-      const cibles = ouvertes.filter(a => a.pieces && a.pieces.libelle === maj.libelle);
-      for (const a of cibles) {
-        await sb(`anomalies?id=eq.${a.id}`, { method: "PATCH", prefer: "return=minimal",
-          body: JSON.stringify({ statut: "CLASSEE", cloture_par: ctx.id,
-                                 cloture_le: new Date().toISOString() }) });
-        await sb("anomalie_evenements", { method: "POST", prefer: "return=minimal",
-          body: JSON.stringify({ anomalie_id: a.id, auteur_id: ctx.id, type: "CHGT_STATUT",
-            contenu: statut === "OPERATION" ? "Opération commerciale déclarée"
-                                            : "Remise qualifiée de normale" }) });
-        refermees++;
-      }
-    }
-    return { ok: true, refermees };
-  },
-
-  // Écran d'accueil : un chiffre par restaurant, pour savoir où aller
-  // avant même d'entrer. Une seule requête pour tout le périmètre.
-  async accueil(_, ctx) {
-    if (!ctx.lecture.length) return { restaurants: [] };
-    const f = `restaurant_id=in.(${ctx.lecture.join(",")})`;
-    const depuis = new Date();
-    depuis.setMonth(depuis.getMonth() - 3);
-    const [restos, ecarts] = await Promise.all([
-      sb(`restaurants?id=in.(${ctx.lecture.join(",")})&select=id,nom,code_cash&order=nom`),
-      sb(`v_ecarts_sessions?${f}&compense=is.false`
-        + `&date_fiscale=gte.${depuis.toISOString().slice(0, 10)}`
-        + `&select=restaurant_id,date_fiscale,ecart_mesure,echeance_camera&limit=2000`)
-    ]);
-    const auj = new Date();
-    return {
-      restaurants: restos.map(function (r) {
-        const l = ecarts.filter(e => e.restaurant_id === r.id);
-        const mois = [...new Set(l.map(e => String(e.date_fiscale).slice(0, 7)))].sort().pop();
-        const duMois = l.filter(e => String(e.date_fiscale).slice(0, 7) === mois);
-        return { ...r,
-          dernier_mois: mois || null,
-          ecarts: duMois.length,
-          total: Math.round(duMois.reduce((t, e) => t + Number(e.ecart_mesure || 0), 0) * 100) / 100,
-          urgents: l.filter(e => e.echeance_camera && new Date(e.echeance_camera) >= auj).length };
-      })
-    };
-  },
-
-  // Les comptages en manque, et rien d'autre. Un seul dénominateur pour
-  // tout l'écran : les sessions dont le manquant espèces dépasse 20 € et
-  // n'est pas repris par un autre mode de règlement. Les totaux affichés
-  // correspondent donc toujours au détail listé en dessous — ce n'était
-  // pas le cas de la version précédente, qui mélangeait deux populations.
-  async caisses({ restaurant_id, mois }, ctx) {
-    const rid = Number(restaurant_id);
-    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
-
-    const [parMois, ids] = await Promise.all([
-      sb(`v_caisses_ecarts?restaurant_id=eq.${rid}&select=mois&order=mois.desc`),
-      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
-    ]);
-    const moisDispo = [...new Set(parMois.map(l => l.mois))].sort().reverse();
-    const m = mois || moisDispo[0] || null;
-    const noms = {};
-    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
-    if (!m) return { mois: null, mois_disponibles: [], noms, sessions: [], compensees: [] };
-
-    const [brutes, shifts] = await Promise.all([
-      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}`
-        + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}`
-        + `&select=*&order=ecart_especes.asc`),
-      sb(`v_shifts_jour?restaurant_id=eq.${rid}`
-        + `&date_fiscale=gte.${m.slice(0, 7)}-01&date_fiscale=lte.${finDuMois(m)}&select=*`)
-    ]);
-
-    // Un manquant sur une caisse peut être repris par une autre caisse du
-    // même service : titre restaurant ventilé au mauvais endroit, par
-    // exemple. Sans ce total, l'application signale une perte là où il n'y
-    // a qu'une erreur de saisie entre deux caisses.
-    const parShift = {};
-    shifts.forEach(x => parShift[`${x.date_fiscale}|${x.shift}`] = x);
-
-    const visibles = brutes
-      .filter(s => !ctx.masques.includes(s.badge_code)
-                && !ctx.masques.includes(s.responsable))
-      .map(function (s) {
-        const sh = parShift[`${s.date_fiscale}|${s.shift}`] || null;
-        const service = sh ? Number(sh.ecart_global) : null;
-        const manquant = Math.abs(Number(s.ecart_especes) || 0);
-        // Le SIGNE compte autant que l'ampleur. Un service en excédent
-        // pendant qu'une caisse manque est le cas de ventilation par
-        // excellence : l'argent est sur une autre caisse. Ma première
-        // version ne regardait que la valeur absolue et classait « manque
-        // réellement » un service à +60 € — l'inverse de la réalité.
-        return { ...s,
-          service_ecart: service,
-          service_caisses: sh ? sh.caisses : null,
-          service_lecture: service === null ? null
-            : service > -10 ? "REPRIS"
-            : Math.abs(service) < manquant * 0.5 ? "PARTIEL"
-            : "MANQUE" };
-      });
-
-    return {
-      mois: m, mois_disponibles: moisDispo, noms,
-      sessions: visibles.filter(s => !s.compense),
-      compensees: visibles.filter(s => s.compense)
-    };
-  },
-
-  // Le détail des 23 modes de règlement d'une session : exactement le
-  // tableau que le directeur a sous les yeux dans Cash Système. C'est là
-  // que se lit la différence entre un manquant et une ventilation.
-  async reglements({ restaurant_id, session_id }, ctx) {
-    const rid = Number(restaurant_id);
-    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
-    // on repart de l'identifiant de session : faire transiter la caisse et
-    // l'horodatage par un attribut HTML cassait le bouton
-    const [e] = await sb(`v_ecarts_sessions?id=eq.${Number(session_id)}`
-      + `&select=restaurant_id,caisse,fin_session`);
-    if (!e || e.restaurant_id !== rid) throw new Error("Session introuvable");
-    const lignes = await sb(`reglements_session?restaurant_id=eq.${rid}`
-      + `&caisse=eq.${encodeURIComponent(e.caisse)}`
-      + `&fin_session=eq.${encodeURIComponent(e.fin_session)}`
-      + `&select=*&order=reglement.asc`);
-    // on ne montre que ce qui bouge : vingt lignes à zéro n'apprennent rien
-    const utiles = lignes.filter(l => Math.abs(Number(l.ecart) || 0) > 0.01
-                                   || Math.abs(Number(l.theorique) || 0) > 0.01
-                                   || Math.abs(Number(l.declare) || 0) > 0.01);
-    const total = lignes.filter(l => l.reglement !== "REPAS EMPLOYE")
-      .reduce((t, l) => t + (Number(l.ecart) || 0), 0);
-    return { lignes: utiles, total: Math.round(total * 100) / 100,
-             nb_modes: lignes.length };
-  },
-
-  // Ce qui s'est passé sur la caisse pendant la session où l'argent a
-  // manqué. Chargé au clic, jamais avec la liste : sur un mois entier,
-  // rapatrier le contexte de toutes les sessions serait inutile et lent.
-  async contexte({ session_id, restaurant_id }, ctx) {
-    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    const [bornes] = await sb(`v_bornes_session?id=eq.${Number(session_id)}&select=*`);
-    if (!bornes || bornes.restaurant_id !== Number(restaurant_id))
-      throw new Error("Session introuvable");
-    const ops = await sb(`v_operations_session?session_id=eq.${Number(session_id)}`
-      + `&select=*&order=horodate.asc`);
-    return { bornes, operations: ops };
-  },
-
-  // Où chacun se situe. Sur toute la période chargée, pas sur un mois :
-  // un mauvais mois isolé ne dit rien, c'est la répétition qui parle.
-  // Le taux est le seul chiffre comparable — quelqu'un qui valide 180
-  // caisses accumule mécaniquement plus d'écarts que celui qui en valide 40.
-  async encadrants({ restaurant_id }, ctx) {
-    const rid = Number(restaurant_id);
-    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
-    const [suivi, faits, ids] = await Promise.all([
-      sb(`v_encadrants_mois?restaurant_id=eq.${rid}&select=responsable,nom_affiche,mois,sessions`),
-      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&compense=is.false&select=*&limit=3000`),
-      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
-    ]);
-    const noms = {};
-    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
-
-    const par = {};
-    suivi.forEach(function (l) {
-      if (ctx.masques.includes(l.responsable)) return;
-      const e = par[l.responsable] || (par[l.responsable] = {
-        code: l.responsable, nom: l.nom_affiche || noms[l.responsable] || l.responsable,
-        validees: 0, mois: new Set(), en_manque: 0, total: 0, pire: 0, urgents: 0,
-        dernier: null });
-      e.validees += Number(l.sessions) || 0;
-      e.mois.add(l.mois);
-    });
-    const auj = new Date();
-    faits.forEach(function (f) {
-      const e = par[f.responsable];
-      if (!e) return;
-      e.en_manque++;
-      e.total += Number(f.ecart_mesure) || 0;
-      e.pire = Math.min(e.pire, Number(f.ecart_mesure) || 0);
-      if (f.echeance_camera && new Date(f.echeance_camera) >= auj) e.urgents++;
-      if (!e.dernier || f.date_fiscale > e.dernier) e.dernier = f.date_fiscale;
-    });
-
-    const liste = Object.values(par).map(e => ({
-      ...e, mois: e.mois.size,
-      total: Math.round(e.total * 100) / 100,
-      taux: e.validees ? Math.round(e.en_manque / e.validees * 1000) / 10 : null
-    })).sort((a, b) => (b.taux || 0) - (a.taux || 0) || a.total - b.total);
-
-    const totalValidees = liste.reduce((t, e) => t + e.validees, 0);
-    const totalManque = liste.reduce((t, e) => t + e.en_manque, 0);
-    return { encadrants: liste, noms,
-             taux_restaurant: totalValidees
-               ? Math.round(totalManque / totalValidees * 1000) / 10 : null,
-             validees: totalValidees, en_manque: totalManque };
-  },
-
-  // Fiche d'un responsable : sa série mensuelle et tous ses comptages en
-  // manque. Le taux est le seul chiffre comparable dans le temps — le
-  // nombre brut suit le volume de caisses validées, qui varie d'un mois
-  // à l'autre selon les plannings.
-  async personne({ restaurant_id, code }, ctx) {
-    const rid = Number(restaurant_id);
-    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
-    if (ctx.masques.includes(code)) throw new Error("Hors périmètre");
-    const cible = encodeURIComponent(code);
-    const [faits, suivi, ids] = await Promise.all([
-      sb(`v_ecarts_sessions?restaurant_id=eq.${rid}&responsable=eq.${cible}`
-        + `&compense=is.false&select=*&order=date_fiscale.desc`),
-      sb(`v_encadrants_mois?restaurant_id=eq.${rid}&responsable=eq.${cible}`
-        + `&select=mois,sessions,nom_affiche&order=mois.asc`),
-      sb(`v_identites?restaurant_id=eq.${rid}&select=*`)
-    ]);
-    const noms = {};
-    ids.forEach(i => noms[i.badge_code] = i.nom_affiche);
-
-    const serie = suivi.map(function (l) {
-      const duMois = faits.filter(f => String(f.date_fiscale).slice(0, 7) === l.mois.slice(0, 7));
-      const total = duMois.reduce((t, f) => t + Number(f.ecart_especes || 0), 0);
-      return {
-        mois: l.mois,
-        validees: Number(l.sessions) || 0,
-        en_manque: duMois.length,
-        total: Math.round(total * 100) / 100,
-        pire: duMois.length ? Math.min(...duMois.map(f => Number(f.ecart_especes))) : 0,
-        taux: Number(l.sessions) ? Math.round(duMois.length / Number(l.sessions) * 1000) / 10 : null
-      };
-    });
-
-    return {
-      code,
-      nom: (suivi[0] && suivi[0].nom_affiche) || noms[code] || code,
-      serie, noms,
-      faits: faits.slice(0, 60),
-      nb_faits: faits.length,
-      total: Math.round(faits.reduce((t, f) => t + Number(f.ecart_especes || 0), 0) * 100) / 100
-    };
-  },
-
-  async ficheSalarie({ restaurant_id, badge_code }, ctx) {
-    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    if (ctx.masques.includes(badge_code)) throw new Error("Hors périmètre");
-    const [flux, tnp, tend, anos] = await Promise.all([
-      sb(`flux_caissiers?restaurant_id=eq.${restaurant_id}&badge_code=eq.${badge_code}&select=*&order=mois`),
-      sb(`tickets_non_payants?restaurant_id=eq.${restaurant_id}&badge_code=eq.${badge_code}&select=*&order=mois`),
-      sb(`tendances?restaurant_id=eq.${restaurant_id}&badge_code=eq.${badge_code}&select=*&order=mois`),
-      sb(`anomalies?restaurant_id=eq.${restaurant_id}&badge_code=eq.${badge_code}&select=*&order=cree_le.desc&limit=50`)
-    ]);
-    return { flux, tickets: tnp, tendances: tend, anomalies: anos };
-  },
-
-  /* --- administration, DG uniquement --- */
-
-  async utilisateurs(_, ctx) {
-    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
-    const [us, ps] = await Promise.all([
-      sb("utilisateurs?select=id,nom,email,role,responsable_id,actif,derniere_connexion&order=nom"),
-      sb("perimetres?select=*")
-    ]);
-    return { utilisateurs: us, perimetres: ps };
-  },
-
-  // Gestion des restaurants. Étaples arrive, et il ne doit pas falloir
-  // passer par l'éditeur SQL pour ouvrir un site.
-  async restaurants(_, ctx) {
-    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
-    const [liste, types] = await Promise.all([
-      sb("restaurants?select=*&order=nom"),
-      sb("restaurants?select=type_implantation")
-    ]);
-    return { restaurants: liste,
-             types: [...new Set(types.map(t => t.type_implantation).filter(Boolean))].sort() };
-  },
-
-  async majRestaurant({ id, code_cash, nom, type_implantation, actif }, ctx) {
-    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
-    if (!nom || !String(nom).trim()) return { erreur: "Le nom est obligatoire." };
-    const corps = { nom: String(nom).trim(),
-                    code_cash: code_cash ? String(code_cash).trim() : null,
-                    type_implantation: type_implantation || null,
-                    actif: actif === undefined ? true : !!actif };
-    if (id) {
-      await sb(`restaurants?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(corps) });
-      return { ok: true, id };
-    }
-    const [r] = await sb("restaurants", { method: "POST", body: JSON.stringify(corps) });
-    // sans périmètre, un restaurant créé reste invisible de tous, y compris
-    // de celui qui vient de le créer : on ouvre l'accès à l'encadrement.
-    const encadrement = await sb(
-      "utilisateurs?role=in.(DG,SUPERVISEUR,CDG)&actif=is.true&select=id,role");
-    if (encadrement.length)
-      await sb("perimetres", { method: "POST", prefer: "return=minimal",
-        body: JSON.stringify(encadrement.map(u => ({
-          utilisateur_id: u.id, restaurant_id: r.id,
-          peut_deposer: true, peut_lire: true, peut_cloturer: true }))) });
-    return { ok: true, id: r.id, perimetres_ouverts: encadrement.length };
-  },
-
-  async creerUtilisateur({ nom, email, role, pin, responsable_id, perimetres }, ctx) {
-    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
-    if (["DG", "SUPERVISEUR", "CDG"].includes(role) && String(pin).length < 6)
-      return { erreur: "Un profil pouvant clore une anomalie exige un code d'au moins 6 chiffres." };
-    if (String(pin).length < 4) return { erreur: "Code trop court." };
-    const [u] = await sb("utilisateurs", { method: "POST", body: JSON.stringify(
-      { nom, email, role, responsable_id: responsable_id || null, pin_hash: "x" }) });
-    await rpc("definir_pin", { p_utilisateur: u.id, p_pin: String(pin) });
-    if (perimetres?.length)
-      await sb("perimetres", { method: "POST", body: JSON.stringify(
-        perimetres.map(p => ({ utilisateur_id: u.id, restaurant_id: p.restaurant_id,
-          peut_deposer: !!p.peut_deposer, peut_lire: !!p.peut_lire,
-          peut_cloturer: !!p.peut_cloturer })) ) });
-    return { ok: true, id: u.id };
-  },
-
-  async majUtilisateur({ id, actif, role, responsable_id, pin, perimetres }, ctx) {
-    if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
-    const maj = {};
-    if (actif !== undefined) maj.actif = !!actif;
-    if (role) maj.role = role;
-    if (responsable_id !== undefined) maj.responsable_id = responsable_id || null;
-    if (Object.keys(maj).length)
-      await sb(`utilisateurs?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(maj) });
-    if (pin) await rpc("definir_pin", { p_utilisateur: Number(id), p_pin: String(pin) });
-    if (perimetres) {
-      await sb(`perimetres?utilisateur_id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
-      if (perimetres.length)
-        await sb("perimetres", { method: "POST", body: JSON.stringify(
-          perimetres.map(p => ({ utilisateur_id: Number(id), restaurant_id: p.restaurant_id,
-            peut_deposer: !!p.peut_deposer, peut_lire: !!p.peut_lire,
-            peut_cloturer: !!p.peut_cloturer })) ) });
-    }
-    return { ok: true };
-  },
-
-  // La table des salariés est le pivot : sans elle, aucun écart n'est
-  // nominatif. On sépare les encadrants des équipiers, parce qu'ils ne
-  // demandent pas le même travail. Le nom complet d'un encadrant figure
-  // en clair dans la colonne du valideur de la Déclaration de caisse
-  // (« BAUDRY Laurence ») : sa fiche se pré-remplit toute seule. Un
-  // équipier n'apparaît que sous son trigramme, il faut le saisir.
-  async salaries({ restaurant_id }, ctx) {
-    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    const [liste, flux, sessions] = await Promise.all([
-      sb(`salaries?restaurant_id=eq.${restaurant_id}&select=*&order=badge_code`),
-      sb(`flux_caissiers?restaurant_id=eq.${restaurant_id}&select=badge_code`),
-      sb(`sessions_caisse?restaurant_id=eq.${restaurant_id}`
-        + `&select=badge_code,valide_par&limit=5000`)
-    ]);
-    const connus = new Set(liste.map(s => s.badge_code));
-
-    // même règle que Cash Système : 4 lettres du nom + 3 du prénom
-    const badge = v => {
-      const t = String(v || "").trim();
-      if (!t) return null;
-      if (t.indexOf(" ") < 0) return t.toUpperCase();
-      const [nom, prenom] = t.split(/\s+/);
-      return (nom.slice(0, 4) + (prenom || "").slice(0, 3)).toUpperCase();
-    };
-
-    const encadrants = new Map();   // badge -> nom complet le plus fréquent
-    const equipiers = new Set();
-    sessions.forEach(function (s) {
-      const v = s.valide_par && String(s.valide_par).trim();
-      if (v) {
-        const b = badge(v);
-        if (b && !encadrants.has(b)) encadrants.set(b, v.indexOf(" ") > 0 ? v : null);
-      }
-      if (s.badge_code) equipiers.add(String(s.badge_code).trim().toUpperCase());
-    });
-    flux.forEach(f => { if (f.badge_code) equipiers.add(String(f.badge_code).trim().toUpperCase()); });
-
-    return {
-      salaries: liste,
-      inconnus_encadrants: [...encadrants.entries()]
-        .filter(([b]) => b && !connus.has(b))
-        .map(([badge_code, nom_propose]) => ({ badge_code, nom_propose }))
-        .sort((a, b) => a.badge_code.localeCompare(b.badge_code)),
-      inconnus_equipiers: [...equipiers]
-        .filter(b => b && !connus.has(b) && !encadrants.has(b))
-        .sort()
-    };
-  },
-
-  async supprimerSalarie({ id, restaurant_id }, ctx) {
-    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    if (!["DG", "SUPERVISEUR", "CDG"].includes(ctx.role))
-      return { erreur: "Réservé à la direction et au contrôle de gestion." };
-    await sb(`salaries?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
-    return { ok: true };
-  },
-
-  // Les badges sont construits en 4 lettres du nom + 3 du prénom
-  // (BAUDRY Laurence -> BAUDLAU). L'app propose, le directeur valide :
-  // c'est une proposition, jamais une déduction certaine.
-  async majSalarie({ id, restaurant_id, badge_code, nom_complet, fonction, poste_habituel,
-                     utilisateur_id, date_prise_poste }, ctx) {
-    if (!dansPerimetre(ctx, restaurant_id)) throw new Error("Hors périmètre");
-    const corps = { restaurant_id, badge_code, nom_complet, fonction, poste_habituel,
-                    utilisateur_id: utilisateur_id || null,
-                    date_prise_poste: date_prise_poste || null, confiance_mapping: "VALIDE" };
-    if (id) await sb(`salaries?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(corps) });
-    else    await sb("salaries", { method: "POST", body: JSON.stringify(corps) });
-    return { ok: true };
-  }
-};
-
-/* ---------- routage ---------- */
-
-module.exports = async (req, res) => {
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ erreur: "POST attendu" });
-  try {
-    const corps = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const { action, jeton, ...params } = corps;
-    if (!actions[action]) return res.status(400).json({ erreur: "Action inconnue" });
-    if (action === "connexion") return res.status(200).json(await actions.connexion(params));
-    const session = lireJeton(jeton);
-    if (!session) return res.status(401).json({ erreur: "Session expirée" });
-    const ctx = await contexte(session.uid);
-    return res.status(200).json(await actions[action](params, ctx));
+    const r = await fetch("/api/audit", { method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ action:"connexion", email:$("#email").value.trim(), pin:$("#pin").value }) });
+    const d = await r.json();
+    if (d.erreur) throw new Error(d.erreur);
+    localStorage.setItem("jeton-audit", d.jeton);
+    E.jeton = d.jeton;
+    await demarrer();
   } catch (e) {
-    return res.status(500).json({ erreur: String(e.message || e) });
-  }
+    $("#err-connexion").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  } finally { b.disabled = false; b.textContent = "Se connecter"; }
+}
+
+function seDeconnecter() { localStorage.removeItem("jeton-audit"); location.reload(); }
+
+async function demarrer() {
+  const d = await api("audit", "moi");
+  Object.assign(E, d);
+  $("#connexion").style.display = "none";
+  $("#app").style.display = "block";
+  $("#qui").textContent = d.utilisateur.nom;
+  const onglets = [["ecarts","Écarts",ICONES.ecarts],
+                   ["encadrants","Encadrants",ICONES.encadrants],["depot","Dépôt",ICONES.depot],
+                   ["remises","Remises",ICONES.remises],["equipe","Équipe",ICONES.equipe]];
+  if (d.utilisateur.role === "DG") onglets.push(["admin","Accès",ICONES.acces]);
+  $("#nav").innerHTML = onglets.map(function(o){
+    return '<button data-onglet="' + o[0] + '" onclick="aller(\'' + o[0] + '\')">' +
+      '<svg viewBox="0 0 24 24">' + o[2] + '</svg>' + o[1] + '</button>';
+  }).join("");
+  if (E.droits.lecture.length) retourRestos(); else aller("depot");
+}
+
+/* Le restaurant est la clé d'entrée. Tant qu'aucun n'est choisi, les onglets
+   qui en dépendent n'ont rien à afficher : on montre la liste. */
+const ONGLETS_RESTO = ["ecarts", "encadrants", "depot", "equipe"];
+
+function retourRestos() {
+  E.resto = null;
+  E.onglet = null;
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-current", "false"));
+  majEntete();
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
+  vueRestos().catch(afficherErreur);
+}
+
+function ouvrirResto(id) {
+  E.resto = Number(id);
+  E.ec = null; E.depot = null; E.eq = null;
+  aller("ecarts");
+}
+
+function majEntete() {
+  const b = document.getElementById("btn-retour");
+  const t = document.getElementById("titre-entete");
+  const r = E.resto && (E.restaurants || []).find(x => x.id === E.resto);
+  if (r) { b.style.display = "flex"; t.textContent = r.nom; }
+  else   { b.style.display = "none"; t.innerHTML = 'Audit <em>BKCO</em>'; }
+}
+
+async function vueRestos() {
+  const d = await api("audit", "accueil");
+  const restos = d.restaurants || [];
+  const initiales = n => {
+    const m = String(n).toUpperCase().replace(/[^A-Z ]/g, "").split(" ").filter(Boolean);
+    return m.length > 1 ? m[0][0] + m[1][0] : (m[0] || "?").slice(0, 2);
+  };
+  $("#vue").innerHTML =
+    '<h2>Restaurants</h2>' +
+    '<p class="sous">Choisissez un restaurant pour voir ses écarts, déposer ses exports ou ' +
+      'compléter son équipe. Le chiffre indique les comptages en manque du dernier mois ' +
+      'chargé.</p>' +
+    (restos.length ? '<div class="liste-restos">' + restos.map(function (r) {
+      const sous = !r.dernier_mois ? "aucune donnée chargée"
+        : r.ecarts ? moisLisible(r.dernier_mois + "-01") + " · " + eur0(r.total) +
+            (r.urgents ? " · " + r.urgents + " encore en vidéo" : "")
+        : moisLisible(r.dernier_mois + "-01") + " · rien à vérifier";
+      return '<button class="resto-carte" onclick="ouvrirResto(' + r.id + ')">' +
+        '<span class="resto-pastille">' + esc(initiales(r.nom)) + '</span>' +
+        '<span class="resto-txt"><b>' + esc(r.nom) + '</b><span>' + esc(sous) + '</span></span>' +
+        '<span class="resto-chiffre"><b' + (r.ecarts ? ' class="montant negatif"' : '') + '>' +
+          (r.dernier_mois ? r.ecarts : "—") + '</b><span>à vérifier</span></span>' +
+        '<span class="resto-fleche">&#8250;</span></button>';
+    }).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun restaurant</b>' +
+      'Vous n\'avez pas de droit de lecture.</div></div>');
+}
+
+function aller(onglet, params) {
+  if (ONGLETS_RESTO.indexOf(onglet) >= 0 && !E.resto) return retourRestos();
+  E.onglet = onglet;
+  majEntete();
+  document.querySelectorAll("#nav button").forEach(function(b){
+    b.setAttribute("aria-current", b.dataset.onglet === onglet ? "page" : "false"); });
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
+  ({ ecarts:vueEcarts, encadrants:vueEncadrants, depot:vueDepot, remises:vueRemises,
+     equipe:vueEquipe, admin:vueAdmin }[onglet])(params).catch(afficherErreur);
+}
+const afficherErreur = e => $("#vue").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+
+function basculer(id) {
+  const e = document.getElementById(id);
+  if (e) e.style.display = e.style.display === "none" ? "block" : "none";
+}
+const momentLisible = s =>
+  ({ MIDI:"service du midi", SOIR:"service du soir",
+     OUVERTURE:"ouverture", JOURNEE:"journée", FERMETURE:"fermeture" }[s] || "");
+
+/* Un manquant sur une caisse peut être repris par une autre caisse du même
+   service. Cette phrase est ce qui distingue une vraie perte d'une erreur
+   de ventilation, et elle change ce que le directeur doit faire. */
+const MOT_SERVICE = {
+  REPRIS: ["ok", "repris sur le service"],
+  PARTIEL: ["urgent", "en partie repris"],
+  MANQUE: ["expire", "manque réellement"]
 };
+/* À une seule caisse ouverte, « manque réellement » laisse croire à une
+   vérification qui n'a pas eu lieu : il n'y avait rien à comparer. */
+function etiquetteService(s) {
+  if (!s.service_lecture) return "";
+  if (Number(s.service_caisses) <= 1)
+    return '<span class="etiquette expire">seule caisse du service</span>';
+  const m = MOT_SERVICE[s.service_lecture];
+  return '<span class="etiquette ' + m[0] + '">' + m[1] + '</span>';
+}
+function phraseService(s) {
+  if (!s.service_lecture) return "";
+  const e = eur(s.service_ecart), n = Number(s.service_caisses) || 0;
+
+  /* Une seule caisse ouverte sur le service : le total du service est
+     forcément celui de cette caisse. Parler de compensation n'aurait aucun
+     sens, il n'y a rien qui puisse reprendre l'écart. */
+  if (n <= 1)
+    return "Cette caisse était la seule ouverte sur ce service : aucune autre n'a pu "
+      + "reprendre l'écart. Ce qui manque ici manque pour de bon.";
+
+  const parc = "les " + n + " caisses du service totalisent " + e;
+  if (s.service_lecture === "REPRIS")
+    return "Sur l'ensemble du service, " + parc + " toutes recettes confondues"
+      + (s.service_ecart > 10 ? ", donc en excédent" : "") + " : ce manquant est repris par "
+      + "une autre caisse. C'est une ventilation à corriger, pas de l'argent disparu.";
+  if (s.service_lecture === "PARTIEL")
+    return "Sur l'ensemble du service, " + parc + " : le manquant de cette caisse est en "
+      + "grande partie repris ailleurs.";
+  return "Sur l'ensemble du service, " + parc + " : l'argent manque réellement, il n'est "
+    + "repris par aucune autre caisse.";
+}
+function resteCamera(echeance) {
+  if (!echeance) return null;
+  return Math.ceil((new Date(echeance) - new Date()) / 86400000);
+}
+function etiquetteCamera(reste) {
+  if (reste === null) return "";
+  if (reste < 0)  return '<span class="etiquette expire">images perdues</span>';
+  if (reste === 0) return '<span class="etiquette urgent">dernier jour</span>';
+  if (reste <= 4) return '<span class="etiquette urgent">' + reste + ' j de caméra</span>';
+  return '<span class="etiquette ok">' + reste + ' j de caméra</span>';
+}
+
+/* Les mois se parcourent dans l'ordre, pas dans un menu : neuf fois sur dix
+   on veut le mois d'avant ou celui d'après. */
+function navMois(d, onglet) {
+  const l = (d.mois_disponibles || []).slice().sort();
+  if (!l.length) return "";
+  const i = l.indexOf(d.mois);
+  const bouton = (cible, signe) => '<button ' + (cible ? 'onclick="aller(\'' + onglet +
+    '\',{mois:\'' + cible + '\'})"' : 'disabled') + '>' + signe + '</button>';
+  return '<div class="navmois">' +
+    bouton(i > 0 ? l[i - 1] : null, "‹") +
+    '<span class="mois">' + moisLisible(d.mois) + '</span>' +
+    bouton(i >= 0 && i < l.length - 1 ? l[i + 1] : null, "›") +
+    '<span style="color:var(--ink-3);font-size:13px">' + l.length + ' mois chargés</span>' +
+  '</div>';
+}
+
+/* =====================================================================
+   ÉCARTS — l'écran principal
+   ===================================================================== */
+
+async function vueEcarts(params) {
+  const p = params || {};
+  E.ec = { restaurant_id: E.resto,
+           mois: p.mois !== undefined ? p.mois : (E.ec && E.ec.mois) || null };
+  const rid = E.resto;
+
+  const d = await api("audit", "caisses", { restaurant_id: rid, mois: E.ec.mois });
+  E.ec.mois = d.mois;
+  E.noms = d.noms || {};
+
+  const selecteurs = navMois(d, "ecarts");
+
+  if (!d.mois) { $("#vue").innerHTML = '<h2>Écarts de caisse</h2>' + selecteurs +
+    '<div class="bloc"><div class="vide"><b>Aucune donnée</b>' +
+    'Déposez les déclarations de caisse dans l\'onglet Dépôt.</div></div>'; return; }
+
+  /* Tous les chiffres de cet écran viennent de la même liste de comptages :
+     ceux qui manquent de plus de 20 € en espèces sans qu'un autre mode de
+     règlement ne reprenne la différence. Un seul dénominateur, donc aucun
+     total qui ne corresponde pas au détail affiché juste en dessous. */
+  const faits = (d.sessions || []).slice().sort(function(a,b){
+    return Number(a.ecart_mesure) - Number(b.ecart_mesure); });
+  const total = faits.reduce((t,s) => t + Number(s.ecart_mesure || 0), 0);
+  const urgents = faits.filter(s => { const r = resteCamera(s.echeance_camera);
+                                      return r !== null && r >= 0; });
+  const pire = faits[0];
+
+  const parPersonne = {};
+  faits.forEach(function(s){
+    const k = s.responsable || "—";
+    const g = parPersonne[k] || (parPersonne[k] = { qui:k, n:0, total:0, pire:0, jours:{} });
+    g.n++; g.total += Number(s.ecart_mesure || 0);
+    g.pire = Math.min(g.pire, Number(s.ecart_mesure || 0));
+    g.jours[String(s.date_fiscale).slice(0,10)] = 1;
+  });
+  const personnes = Object.values(parPersonne).sort((a,b) => b.n - a.n || a.total - b.total);
+
+  $("#vue").innerHTML =
+    '<h2>Écarts de caisse</h2>' +
+    '<p class="sous">Les comptages dont l\'écart <b>total</b> dépasse 20 €, tous modes de ' +
+      'règlement confondus. Un manquant en espèces repris par un autre mode est une erreur ' +
+      'de déclaration, pas une perte : il est écarté. ' + moisLisible(d.mois) + '.</p>' +
+    selecteurs +
+    '<div class="compteurs">' +
+      '<div><b>' + faits.length + '</b><span>comptages en manque</span></div>' +
+      '<div><b class="montant negatif">' + eur0(total) + '</b><span>au total</span></div>' +
+      '<div><b class="montant negatif">' + (pire ? eur0(pire.ecart_mesure) : "—") + '</b>' +
+        '<span>le plus gros</span></div>' +
+      '<div><b>' + urgents.length + '</b><span>encore en vidéo</span></div>' +
+    '</div>' +
+
+    (urgents.length ? '<div class="bloc">' +
+      '<div class="carte-titre">À regarder maintenant · ' + urgents.length + '</div>' +
+      '<div class="note">Les images sont conservées 14 jours. Passé ce délai, ces écarts ' +
+        'ne pourront plus être vérifiés autrement qu\'en interrogeant les personnes.</div>' +
+      urgents.slice().sort(function(a,b){
+        return String(a.echeance_camera).localeCompare(String(b.echeance_camera))
+            || Number(a.ecart_mesure) - Number(b.ecart_mesure); })
+        .map(ligneFait).join("") + '</div>' : "") +
+
+    (personnes.length ? '<div class="bloc">' +
+      '<div class="carte-titre">Qui a validé ces comptages · ' + personnes.length + '</div>' +
+      (personnes.length > 6 ? '<div class="zone" style="padding-bottom:0">' +
+        '<input class="recherche" placeholder="Filtrer par nom…" ' +
+        'oninput="filtrerPersonnes(this.value)"></div>' : '') +
+      '<div class="note">Le responsable est celui qui a compté et validé la caisse. Le nombre ' +
+        'de comptages compte davantage que le montant : quelqu\'un qui valide beaucoup de ' +
+        'caisses en accumule mécaniquement plus.</div>' +
+      personnes.map(function(g){
+        return '<button class="ligne personne" data-nom="' +
+          esc(String(nom(g.qui)).toLowerCase()) + '" onclick="vuePersonne(\'' + g.qui + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(nom(g.qui)) + '</div>' +
+          '<div class="detail">' + g.n + ' comptage(s) sur ' +
+            Object.keys(g.jours).length + ' jour(s) · plus gros ' + eur(g.pire) +
+            ' · voir son historique</div></div>' +
+          '<div class="montant num negatif">' + eur(g.total) + '</div></button>';
+      }).join("") + '</div>' : "") +
+
+    (faits.length ? '<div class="bloc">' +
+      '<div class="carte-titre">Tous les comptages du mois · ' + faits.length + '</div>' +
+      '<div class="note">Du plus gros manquant au plus petit, quelle que soit la ' +
+        'disponibilité des images.</div>' +
+      faits.map(ligneFait).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun manquant ce mois-ci</b>' +
+      'Tous les comptages sont sous 20 € ou repris par un autre mode de règlement.</div></div>') +
+
+    ((d.compensees || []).length ? '<div class="bloc">' +
+      '<button class="ligne" onclick="basculer(\'compensees\')">' +
+        '<div class="corps"><div class="titre">' + d.compensees.length +
+          ' écart(s) espèces expliqués par la déclaration</div>' +
+        '<div class="detail">Les espèces manquent, mais le total de la caisse est à ' +
+          'l\'équilibre : un règlement a été déclaré sous la mauvaise ligne, souvent un ' +
+          'titre restaurant. C\'est une correction de procédure, pas de l\'argent disparu.' +
+          '</div></div>' +
+        '<span class="etiquette ok">sans suite</span></button>' +
+      '<div id="compensees" style="display:none">' +
+        d.compensees.map(ligneFait).join("") + '</div></div>' : "");
+}
+
+const nom = code => (E.noms && E.noms[code]) || code || "non identifié";
+
+function filtrerPersonnes(q) {
+  const t = String(q || "").trim().toLowerCase();
+  document.querySelectorAll(".personne").forEach(function (b) {
+    b.style.display = !t || b.dataset.nom.indexOf(t) >= 0 ? "" : "none";
+  });
+}
+
+function ligneFait(s) {
+  const id = "f" + s.id;
+  const reste = resteCamera(s.echeance_camera);
+  return '<button class="ligne" onclick="basculer(\'' + id + '\')">' +
+      '<div class="corps"><div class="titre">' + jour(s.date_fiscale) + ' · ' +
+        esc(nom(s.badge_code)) + '</div>' +
+      '<div class="detail">' + esc(momentLisible(s.shift)) + ' · caisse ' +
+        esc(s.caisse || "—") + ' · validé par ' + esc(nom(s.responsable)) +
+        (s.service_lecture ? ' · ' + etiquetteService(s) : '') + '</div></div>' +
+      '<div style="text-align:right"><div class="montant num negatif">' +
+        eur(s.ecart_mesure) + '</div>' +
+      (s.total_connu ? '' : '<div class="detail">espèces seules</div>') +
+      '<div style="margin-top:4px">' + etiquetteCamera(reste) + '</div></div>' +
+    '</button>' +
+    '<div id="' + id + '" style="display:none">' +
+    (s.service_lecture ? '<div class="note">' + esc(phraseService(s)) + '</div>' : '') +
+    '<div class="zone" ' +
+      'style="background:var(--paper);border-bottom:1px solid var(--line)"><dl>' +
+      '<dt>Jour</dt><dd>' + jourLong(s.date_fiscale) + '</dd>' +
+      (s.total_connu
+        ? '<dt>Écart total de la caisse</dt><dd style="font-weight:650">' +
+            eur(s.ecart_total) + ' sur ' + s.modes_en_ecart +
+            (s.modes_en_ecart > 1 ? ' modes' : ' mode') + ' de règlement</dd>'
+        : '<dt>Écart total de la caisse</dt><dd>non connu — déposez le détail ' +
+            'par règlement</dd>') +
+      '<dt>dont espèces</dt><dd>' + eur(s.ecart_especes) + '</dd>' +
+      (s.service_ecart !== null && s.service_ecart !== undefined
+        ? '<dt>Écart du service entier</dt><dd>' + eur(s.service_ecart) + ' sur ' +
+          s.service_caisses + ' caisses</dd>' : '') +
+      '<dt>Fonds de caisse</dt><dd>' + eur(s.fond_de_caisse) + '</dd>' +
+      '<dt>Remises</dt><dd>' + (s.nb_remise || 0) + ' · ' + eur(s.montant_remise) + '</dd>' +
+      '<dt>Annulations</dt><dd>' + (s.nb_annulation || 0) + ' · ' + eur(s.montant_annulation) + '</dd>' +
+      '<dt>Corrections</dt><dd>' + (s.nb_correction || 0) + ' · ' + eur(s.montant_correction) + '</dd>' +
+      (s.echeance_camera ? '<dt>Images disponibles jusqu\'au</dt><dd>' +
+        jour(s.echeance_camera) + '</dd>' : '') +
+    '</dl></div>' +
+    '<div id="reg' + id + '" class="zone" style="border-bottom:1px solid var(--line)">' +
+      '<button style="padding:8px 13px;border-radius:7px;background:var(--navy);' +
+        'color:#fff;font-size:13.5px;font-weight:600" onclick="reglements(' +
+        s.id + ',\'' + id + '\',this)">Voir les 23 modes de règlement</button></div>' +
+    '<div id="ctx' + id + '" class="zone" style="border-bottom:1px solid var(--line)">' +
+      '<button style="padding:8px 13px;border-radius:7px;border:1px solid var(--line);' +
+        'font-size:13.5px;font-weight:600" ' +
+        'onclick="contexte(' + s.id + ',\'' + id + '\',this)">' +
+        'Que s\'est-il passé sur cette caisse ?</button></div>' +
+    '</div>';
+}
+
+/* Le tableau des règlements est celui que le directeur connaît déjà : c'est
+   l'écran de Cash Système. Y retrouver ses repères vaut mieux que n'importe
+   quelle reformulation de ma part. */
+async function reglements(sessionId, id, bouton) {
+  const zone = document.getElementById("reg" + id);
+  bouton.disabled = true; bouton.textContent = "Lecture…";
+  try {
+    const d = await api("audit", "reglements",
+      { restaurant_id: E.ec.restaurant_id, session_id: sessionId });
+    if (!d.lignes.length) {
+      zone.innerHTML = '<p class="sous" style="margin:0">Aucun détail enregistré pour cette ' +
+        'session. Redéposez la Déclaration de caisse du mois pour le récupérer.</p>';
+      return;
+    }
+    // Manquants d'un côté, excédents de l'autre : c'est leur coexistence
+    // qui signale une erreur de déclaration. S'il n'y a que des manquants,
+    // parler de compensation n'a aucun sens.
+    const moins = d.lignes.filter(l => Number(l.ecart) < -0.01);
+    const plus  = d.lignes.filter(l => Number(l.ecart) > 0.01);
+    const repas = d.lignes.some(l => l.reglement === "REPAS EMPLOYE");
+
+    zone.innerHTML =
+      '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<tr style="color:var(--ink-3);text-align:right">' +
+        '<th style="text-align:left;font-weight:600;padding:4px 0">Règlement</th>' +
+        '<th style="font-weight:600">Théorique</th><th style="font-weight:600">Déclaré</th>' +
+        '<th style="font-weight:600">Écart</th></tr>' +
+      d.lignes.map(function (l) {
+        const e = Number(l.ecart) || 0;
+        return '<tr style="text-align:right;border-top:1px solid var(--line)">' +
+          '<td style="text-align:left;padding:4px 0">' + esc(l.reglement) + '</td>' +
+          '<td class="num">' + eur(l.theorique) + '</td>' +
+          '<td class="num">' + eur(l.declare) + '</td>' +
+          '<td class="num" style="font-weight:650;color:' +
+            (e < -0.01 ? 'var(--close)' : e > 0.01 ? 'var(--open)' : 'inherit') + '">' +
+            eur(l.ecart) + '</td></tr>';
+      }).join("") + '</table>' +
+      '<p class="sous" style="margin:8px 0 0;font-size:12.5px">' +
+        (moins.length && plus.length
+          ? 'Un manquant sur une ligne compensé par un excédent sur une autre est une erreur '
+            + 'de déclaration, pas de l\'argent disparu. Ici, ' + moins.length +
+            ' ligne(s) en manque et ' + plus.length + ' en excédent : regardez si les montants '
+            + 'se répondent.'
+          : plus.length
+            ? 'Aucune ligne en manque : la caisse est en excédent.'
+            : moins.length === 1
+              ? 'Un seul mode de règlement est en écart. Rien ne vient le compenser, '
+                + 'l\'argent manque pour de bon.'
+              : moins.length + ' modes en manque, aucun en excédent : rien ne se compense ici.') +
+        (repas ? ' REPAS EMPLOYE est un nombre de repas, pas un montant.' : '') + '</p>';
+  } catch (e) {
+    zone.innerHTML = '<div class="alerte erreur" style="margin:0">' + esc(e.message) + '</div>';
+    bouton.disabled = false; bouton.textContent = "Réessayer";
+  }
+}
+
+/* Le contexte se charge au clic, pas avec la liste : sur un mois entier,
+   rapatrier les opérations de toutes les sessions serait long et inutile. */
+async function contexte(sessionId, id, bouton) {
+  const zone = document.getElementById("ctx" + id);
+  bouton.disabled = true; bouton.textContent = "Lecture…";
+  try {
+    const d = await api("audit", "contexte",
+      { session_id: sessionId, restaurant_id: E.ec.restaurant_id });
+    zone.innerHTML = rendreContexte(d);
+  } catch (e) {
+    zone.innerHTML = '<div class="alerte erreur" style="margin:0">' + esc(e.message) + '</div>';
+  }
+}
+
+const MOT_OP = {
+  CORRECTION: "Correction de ticket",
+  ANNULATION: "Annulation",
+  REMISE: "Remise",
+  COMMANDE_OUVERTE: "Commande ouverte",
+  REPAS_EMPLOYE: "Repas employé"
+};
+
+function rendreContexte(d) {
+  const b = d.bornes, ops = d.operations || [];
+  const creneau = "Caisse ouverte de " + heure(b.debut_session) + " à " + heure(b.fin_session) +
+    (b.borne_estimee ? " (début estimé, la clôture précédente est inconnue)" : "");
+
+  if (!ops.length)
+    return '<p class="sous" style="margin:0">' + esc(creneau) + '. <b>Aucune opération ' +
+      'enregistrée sur cette caisse pendant le créneau</b> : ni correction, ni annulation, ' +
+      'ni remise, ni commande ouverte. L\'argent manque sans qu\'aucune opération de caisse ' +
+      'ne l\'explique.</p>';
+
+  const parType = {};
+  ops.forEach(function (o) { (parType[o.type] = parType[o.type] || []).push(o); });
+
+  const ligneOp = o =>
+    '<div style="font-size:13px;color:var(--ink-3);padding:3px 0">' +
+      heure(o.horodate) + ' · ' + eur(o.montant) +
+      (o.qui ? ' · ' + esc(nom(o.qui)) : '') +
+      (o.valide_par && o.valide_par !== o.qui ? ' · validé par ' + esc(nom(o.valide_par)) : '') +
+      (o.libelle ? ' · ' + esc(o.libelle) : '') +
+      (o.ticket ? ' · ticket ' + esc(o.ticket) : '') + '</div>';
+
+  /* Les premières lignes sont visibles d'emblée, le reste se déplie. Un
+     « et 4 autres » sur lequel on ne peut pas cliquer est une impasse :
+     quand on regarde les remises d'une session, on veut les voir toutes. */
+  const VISIBLES = 8;
+  let n = 0;
+  return '<p class="sous" style="margin:0 0 10px">' + esc(creneau) + ' · ' + ops.length +
+      ' opération(s) sur le créneau.</p>' +
+    Object.keys(parType).map(function (t) {
+      const l = parType[t];
+      const total = l.reduce((s, o) => s + Number(o.montant || 0), 0);
+      const cle = "op" + (n++);
+      const reste = l.length - VISIBLES;
+      return '<div style="margin-bottom:10px">' +
+        '<div style="font-weight:650;font-size:13.5px">' + (MOT_OP[t] || t) + ' · ' +
+          l.length + ' · ' + eur(total) + '</div>' +
+        l.slice(0, VISIBLES).map(ligneOp).join("") +
+        (reste > 0
+          ? '<div id="' + cle + '" style="display:none">' +
+              l.slice(VISIBLES).map(ligneOp).join("") + '</div>' +
+            '<button id="b' + cle + '" style="font-size:13px;color:var(--navy);' +
+              'font-weight:650;padding:4px 0" onclick="deplierOps(\'' + cle + '\',' +
+              reste + ')">voir les ' + reste + ' autre(s)</button>'
+          : '') +
+      '</div>';
+    }).join("");
+}
+
+function deplierOps(cle, reste) {
+  const z = document.getElementById(cle), b = document.getElementById("b" + cle);
+  const ouvert = z.style.display === "none";
+  z.style.display = ouvert ? "block" : "none";
+  b.textContent = ouvert ? "masquer" : "voir les " + reste + " autre(s)";
+}
+
+const heure = t => t ? new Date(t).toLocaleTimeString("fr-FR",
+  { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) : "—";
+
+/* ---------- encadrants ---------- */
+
+/* Où chacun se situe. Le classement se fait sur le TAUX de comptages en
+   manque, jamais sur le montant cumulé : celui qui valide 180 caisses
+   accumule mécaniquement plus d'écarts que celui qui en valide 40. Le taux
+   du restaurant est rappelé en tête pour donner l'échelle — un encadrant à
+   4 % dans un site à 4 % n'a rien de particulier. */
+async function vueEncadrants() {
+  const d = await api("audit", "encadrants", { restaurant_id: E.resto });
+  E.noms = Object.assign({}, E.noms, d.noms || {});
+  const l = d.encadrants || [];
+  const ref = d.taux_restaurant;
+
+  $("#vue").innerHTML =
+    '<h2>Encadrants</h2>' +
+    '<p class="sous">Qui valide les comptages de caisse, sur toute la période chargée. ' +
+      'Le taux est le seul chiffre comparable entre deux personnes : le montant cumulé ' +
+      'suit le nombre de caisses validées.</p>' +
+    '<div class="compteurs">' +
+      '<div><b>' + l.length + '</b><span>encadrants</span></div>' +
+      '<div><b>' + d.validees + '</b><span>caisses validées</span></div>' +
+      '<div><b class="montant negatif">' + d.en_manque + '</b><span>comptages en manque</span></div>' +
+      '<div><b>' + (ref === null ? "—" : ref + " %") + '</b><span>taux du restaurant</span></div>' +
+    '</div>' +
+    (l.length ? '<div class="bloc">' +
+      '<div class="carte-titre">Du taux le plus élevé au plus faible</div>' +
+      l.map(function (e) {
+        const t = e.taux === null ? null : Number(e.taux);
+        const ecart = (t !== null && ref !== null && ref > 0)
+          ? (t >= ref * 1.5 ? " · nettement au-dessus du restaurant"
+            : t <= ref * 0.5 ? " · nettement en dessous"
+            : " · dans la moyenne du restaurant") : "";
+        return '<button class="ligne" onclick="vuePersonne(\'' + e.code + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(e.nom) + '</div>' +
+          '<div class="detail">' + e.en_manque + ' comptage(s) en manque sur ' + e.validees +
+            ' validés · ' + e.mois + ' mois' + esc(ecart) +
+            (e.urgents ? ' · <span class="etiquette urgent">' + e.urgents +
+              ' encore en vidéo</span>' : '') + '</div></div>' +
+          '<div style="text-align:right"><div class="montant num' +
+            (t ? ' negatif' : '') + '">' + (t === null ? "—" : t + " %") + '</div>' +
+          '<div class="detail">' + eur0(e.total) + '</div></div></button>';
+      }).join("") + '</div>'
+    : '<div class="bloc"><div class="vide"><b>Aucun encadrant</b>' +
+      'Déposez les déclarations de caisse de ce restaurant.</div></div>');
+}
+
+/* ---------- fiche d'un responsable ---------- */
+
+/* On trace le TAUX de comptages en manque, pas leur nombre : quelqu'un qui
+   passe de 30 à 60 caisses validées double ses écarts sans que son
+   comportement change. Le nombre brut reste affiché au-dessus de chaque
+   barre, parce que c'est lui qu'on va vérifier concrètement. */
+async function vuePersonne(code) {
+  E.retour = E.onglet || "ecarts";
+  $("#vue").innerHTML = '<p class="chargement">Chargement…</p>';
+  const d = await api("audit", "personne",
+    { restaurant_id: E.resto, code: code }).catch(afficherErreur);
+  if (!d) return;
+  E.noms = Object.assign({}, E.noms, d.noms || {});
+
+  const s = d.serie.filter(x => x.validees > 0);
+  const parMois = {};
+  d.faits.forEach(function (f) {
+    const m = String(f.date_fiscale).slice(0, 7) + "-01";
+    (parMois[m] = parMois[m] || []).push(f);
+  });
+
+  $("#vue").innerHTML =
+    '<button class="ligne" style="border:0;padding:4px 0;color:var(--ink-3);font-size:14px" ' +
+      'onclick="aller(E.retour)">← Retour</button>' +
+    '<h2>' + esc(d.nom) + '</h2>' +
+    '<p class="sous">Tous les comptages qu\'il ou elle a validés et qui manquaient de plus ' +
+      'de 20 €, sur toute la période chargée.</p>' +
+    '<div class="compteurs">' +
+      '<div><b>' + d.nb_faits + '</b><span>comptages en manque</span></div>' +
+      '<div><b class="montant negatif">' + eur0(d.total) + '</b><span>au total</span></div>' +
+      '<div><b>' + s.reduce((t, x) => t + x.validees, 0) + '</b><span>caisses validées</span></div>' +
+    '</div>' +
+    (s.length ? '<div class="bloc">' +
+      '<div class="carte-titre">Mois par mois</div>' +
+      '<div class="zone">' + graphique(s) + '</div>' +
+      '<div class="note">' + esc(tendance(s)) + '</div>' +
+      s.slice().reverse().map(function (x) {
+        return '<div class="ligne"><div class="corps">' +
+          '<div class="titre">' + moisLisible(x.mois) + '</div>' +
+          '<div class="detail">' + x.en_manque + ' comptage(s) en manque sur ' +
+            x.validees + ' validés' + (x.taux !== null ? ' · ' + x.taux + ' %' : '') +
+            (x.pire ? ' · plus gros ' + eur(x.pire) : '') + '</div></div>' +
+          '<div class="montant num' + (x.total ? ' negatif' : '') + '">' +
+            (x.total ? eur(x.total) : '—') + '</div></div>';
+      }).join("") + '</div>' : "") +
+    Object.keys(parMois).sort().reverse().map(function (m) {
+      return '<div class="bloc"><div class="carte-titre">' + moisLisible(m) + ' · ' +
+        parMois[m].length + ' comptage(s)</div>' +
+        parMois[m].sort((a, b) => Number(a.ecart_mesure) - Number(b.ecart_mesure))
+          .map(ligneFait).join("") + '</div>';
+    }).join("");
+}
+
+/* Un graphique fait à la main, sans bibliothèque : quelques barres et des
+   étiquettes. Il n'y a rien à ajouter qu'un outil apporterait ici. */
+function graphique(serie) {
+  const L = 620, H = 170, bas = 132, marge = 28;
+  const n = serie.length;
+  const large = Math.min(58, (L - marge * 2) / Math.max(n, 1) - 10);
+  const pas = (L - marge * 2) / Math.max(n, 1);
+  const max = Math.max(10, ...serie.map(x => x.taux || 0));
+  const barres = serie.map(function (x, i) {
+    const t = x.taux || 0;
+    const h = Math.round(t / max * 96);
+    const cx = marge + pas * i + pas / 2;
+    return '<rect x="' + (cx - large / 2) + '" y="' + (bas - h) + '" width="' + large +
+        '" height="' + Math.max(h, 1) + '" rx="3" fill="' +
+        (t >= max * 0.75 ? '#a32f2a' : t >= max * 0.4 ? '#b8730e' : '#7d8b98') + '"/>' +
+      '<text x="' + cx + '" y="' + (bas - h - 7) + '" text-anchor="middle" font-size="12" ' +
+        'font-weight="700" fill="#1a2028">' + x.en_manque + '</text>' +
+      '<text x="' + cx + '" y="' + (bas + 16) + '" text-anchor="middle" font-size="11" ' +
+        'fill="#5a6672">' + MOIS_FR[Number(x.mois.slice(5, 7)) - 1].slice(0, 4) + '</text>' +
+      '<text x="' + cx + '" y="' + (bas + 30) + '" text-anchor="middle" font-size="11" ' +
+        'fill="#5a6672">' + (x.taux === null ? '—' : x.taux + ' %') + '</text>';
+  }).join("");
+  return '<svg viewBox="0 0 ' + L + ' ' + H + '" style="width:100%;height:auto" ' +
+      'role="img" aria-label="Taux de comptages en manque par mois">' +
+    '<line x1="' + marge + '" y1="' + bas + '" x2="' + (L - marge) + '" y2="' + bas +
+      '" stroke="#dfe3e7"/>' + barres + '</svg>' +
+    '<p class="sous" style="margin:8px 0 0;font-size:12.5px">Hauteur des barres : part des ' +
+      'caisses validées qui manquaient de plus de 20 €. Au-dessus : le nombre de comptages ' +
+      'concernés.</p>';
+}
+
+/* Une phrase, pas un verdict. On compare les trois derniers mois aux trois
+   précédents, et on refuse de conclure en dessous de quatre mois. */
+function tendance(serie) {
+  if (serie.length < 4)
+    return "Seulement " + serie.length + " mois de données : trop peu pour parler de tendance.";
+  const taux = serie.map(x => x.taux || 0);
+  const coupe = Math.max(1, Math.floor(taux.length / 2));
+  const moy = l => l.reduce((t, x) => t + x, 0) / l.length;
+  const avant = moy(taux.slice(0, coupe)), apres = moy(taux.slice(coupe));
+  const p = n => Math.round(n * 10) / 10;
+  if (avant < 1 && apres < 1) return "Taux très faible sur toute la période, rien à signaler.";
+  if (apres >= avant * 1.4)
+    return "En hausse : " + p(avant) + " % des caisses en manque sur la première moitié de la "
+      + "période, " + p(apres) + " % sur la seconde.";
+  if (avant >= apres * 1.4)
+    return "En baisse : " + p(avant) + " % des caisses en manque sur la première moitié de la "
+      + "période, " + p(apres) + " % sur la seconde.";
+  return "Stable : autour de " + p((avant + apres) / 2) + " % des caisses validées sur toute "
+    + "la période.";
+}
+
+/* ---------- dépôt ---------- */
+
+function moisDisponibles(n) {
+  const l = [], d = new Date();
+  for (let i = 0; i < (n || 18); i++) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    l.push([m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2,"0"),
+            MOIS_FR[m.getMonth()] + " " + m.getFullYear()]);
+  }
+  return l;
+}
+function bornesMois(mois) {
+  const an = Number(mois.slice(0,4)), m = Number(mois.slice(5,7));
+  return [mois + "-01", mois + "-" + String(new Date(an, m, 0).getDate()).padStart(2,"0")];
+}
+
+async function vueDepot(params) {
+  if (E.droits.depot.indexOf(E.resto) < 0) { $("#vue").innerHTML =
+    '<div class="bloc"><div class="vide"><b>Dépôt non autorisé</b>' +
+    'Vous pouvez consulter ce restaurant, pas y déposer d\'exports.</div></div>'; return; }
+  E.depot = { restaurant_id: E.resto,
+    mois: (params && params.mois) || (E.depot && E.depot.mois) || moisDisponibles()[1][0] };
+  const rid = E.depot.restaurant_id, mois = E.depot.mois;
+  const bornes = bornesMois(mois);
+
+  const d = await api("audit", "depots", { restaurant_id:rid, debut:bornes[0], fin:bornes[1] });
+  const deposes = {};
+  d.imports.forEach(function(i){
+    if (i.statut === "OK" && !deposes[i.type_rapport_code]) deposes[i.type_rapport_code] = i; });
+  const visibles = d.types.filter(t => t.obligatoire || deposes[t.code]);
+  E.ailleurs = d.ailleurs || {};
+  E.attendus = d.types.filter(t => t.obligatoire).length;
+  E.faits = d.types.filter(t => t.obligatoire && deposes[t.code]).length;
+
+  $("#vue").innerHTML =
+    '<h2>Déposer les exports</h2>' +
+    '<p class="sous">Dans Cash Système, choisissez le restaurant et la période, puis exportez ' +
+      'en CSV chaque rapport de la liste. Glissez le fichier sur sa ligne, ou cliquez sur ' +
+      'Déposer. La Synthèse CA se dépose telle quelle, en ZIP.</p>' +
+    '<label class="champ" style="max-width:260px"><span>Période à déposer</span>' +
+      '<select onchange="aller(\'depot\',{mois:this.value})">' +
+      moisDisponibles().map(o => '<option value="' + o[0] + '"' +
+        (o[0] === mois ? " selected" : "") + '>' + o[1] + '</option>').join("") +
+      '</select></label>' +
+    '<div class="progression"><div class="jauge"><span id="jauge" style="width:' +
+      (E.attendus ? E.faits / E.attendus * 100 : 0) + '%"></span></div>' +
+      '<b id="compteur">' + E.faits + ' sur ' + E.attendus + '</b>' +
+      ' rapports déposés pour cette période</div>' +
+    '<div class="bloc">' + visibles.map(t => ligneDepot(t, deposes[t.code],
+      E.ailleurs[t.code])).join("") + '</div>' +
+    '<div id="bilan"></div>';
+}
+
+/* Quatre rapports ne portent aucune date : leur période vient de l'écran,
+   pas du fichier. C'est le seul endroit où l'on peut se tromper de mois
+   sans que l'application le voie, donc on le dit. */
+const SANS_DATE = ["FLUX_CAISSIERS_1", "FLUX_CAISSIERS_2", "TICKETS_NON_PAYANTS",
+                   "SYNTHESE_CA", "FLUX_RESP_1"];
+
+function ligneDepot(t, imp, ailleurs) {
+  const id = "d" + t.code;
+  const multi = t.code === "SYNTHESE_CA";
+  const sansDate = SANS_DATE.indexOf(t.code) >= 0;
+  return '<div class="ligne" id="l' + id + '"' + (imp ? ' data-fait="1"' : '') +
+    ' ondragover="glisserSur(event,this)" ondragleave="glisserHors(this)"' +
+    ' ondrop="deposerGlisse(event,this,\'' + t.code + '\',\'' + id + '\')">' +
+    '<div class="corps"><div class="titre">' + esc(t.libelle_menu) +
+    (multi ? ' <span class="etiquette">ZIP ou 9 CSV</span>' : '') +
+    (sansDate ? ' <span class="etiquette urgent">mois pris sur l\'écran</span>' : '') + '</div>' +
+    '<div class="detail">' +
+    (imp ? 'déposé le ' + jour(imp.depose_le) + ' · ' + imp.nb_lignes + ' lignes' +
+           ' · <span style="color:var(--close)">période ' + jour(imp.periode_debut) + ' → ' +
+           jour(imp.periode_fin) + '</span>'
+         : ailleurs
+           ? '<span style="color:var(--vacances)">enregistré sous ' +
+             moisLisible(String(ailleurs.periode_debut).slice(0, 7) + "-01") +
+             ' · ' + ailleurs.nb_lignes + ' lignes. Si ce n\'est pas le bon mois, retirez-le ' +
+             'puis redéposez-le ici.</span>'
+           : esc(t.usage_audit || "à déposer")) + '</div></div>' +
+    '<input type="file" id="' + id + '"' + (multi ? " multiple" : "") + ' accept=".csv,.zip" ' +
+      'style="display:none" onchange="envoyer(this.files,\'' + t.code + '\',\'' + id + '\')">' +
+    '<div style="display:flex;flex-direction:column;gap:6px;align-self:center">' +
+      '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
+        id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button>' +
+      (imp ? '<button class="bouton-depot" style="color:var(--close)" onclick="retirerDepot(\'' +
+        t.code + '\',\'' + String(imp.periode_debut).slice(0, 7) + '\')">Retirer</button>'
+        : ailleurs ? '<button class="bouton-depot" style="color:var(--vacances)" ' +
+            'onclick="retirerDepot(\'' + t.code + '\',\'' +
+            String(ailleurs.periode_debut).slice(0, 7) + '\')">Retirer de ' +
+            moisLisible(String(ailleurs.periode_debut).slice(0, 7) + "-01").split(" ")[0] +
+            '</button>' : '') +
+    '</div></div>';
+}
+
+/* Défaire un dépôt : les lignes partent avec lui. C'est le seul remède à
+   un fichier rangé dans le mauvais mois. */
+async function retirerDepot(type, mois) {
+  if (!confirm("Retirer ce rapport pour " + moisLisible(mois + "-01") +
+               " ? Les lignes qu'il a créées seront effacées.")) return;
+  try {
+    const d = await api("audit", "retirerDepot",
+      { restaurant_id: E.depot.restaurant_id, type: type, mois: mois });
+    aller("depot", { mois: E.depot.mois });
+    setTimeout(function () {
+      const b = document.getElementById("bilan");
+      if (b) b.innerHTML = '<div class="alerte info">Retiré : ' + esc(d.type) + ' · ' +
+        moisLisible(d.mois) + ' · ' + d.fichiers + ' fichier(s), ' +
+        (d.nb_lignes || 0) + ' lignes.</div>';
+    }, 400);
+  } catch (e) { alert(e.message); }
+}
+
+/* Glisser-déposer sur chaque ligne. Le navigateur ouvre le fichier à la
+   place de la page si on ne l'en empêche pas : d'où le preventDefault sur
+   les trois événements, et pas seulement sur le lâcher. */
+function glisserSur(ev, el) {
+  ev.preventDefault();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+  el.classList.add("survol");
+}
+function glisserHors(el) { el.classList.remove("survol"); }
+
+function deposerGlisse(ev, el, code, id) {
+  ev.preventDefault();
+  el.classList.remove("survol");
+  const f = ev.dataTransfer && ev.dataTransfer.files;
+  if (f && f.length) envoyer(f, code, id);
+}
+
+/* Un fichier lâché à côté d'une case ouvrirait la page dans le navigateur
+   et ferait perdre le travail en cours. On neutralise le reste de la page. */
+["dragover", "drop"].forEach(function (e) {
+  window.addEventListener(e, function (ev) { ev.preventDefault(); });
+});
+
+/* La Synthèse CA par canal se télécharge en archive ZIP contenant ses neuf
+   CSV : on l'ouvre dans le navigateur plutôt que de demander à chacun de la
+   décompresser à la main. */
+async function deplier(fichiers) {
+  const sortie = [];
+  for (const f of fichiers) {
+    if (!/\.zip$/i.test(f.name)) {
+      sortie.push({ name: f.name, contenu: lireTexte(await f.arrayBuffer()) }); continue;
+    }
+    if (typeof JSZip === "undefined")
+      throw new Error("La lecture des archives ZIP n'a pas pu se charger. Décompressez "
+        + "l'archive et déposez les CSV.");
+    const zip = await JSZip.loadAsync(f);
+    const noms = Object.keys(zip.files)
+      .filter(n => /\.csv$/i.test(n) && !zip.files[n].dir && !n.startsWith("__MACOSX"));
+    if (!noms.length) throw new Error(f.name + " ne contient aucun fichier CSV.");
+    for (const n of noms.sort())
+      sortie.push({ name: n.split("/").pop(),
+                    contenu: lireTexte(await zip.files[n].async("arraybuffer")) });
+  }
+  return sortie;
+}
+
+/* Cash Système exporte tantôt en UTF-8, tantôt en Windows-1252. Un « é » mal
+   décodé devient un caractère de remplacement : on relit dans l'autre
+   encodage plutôt que d'insérer des libellés illisibles. */
+function lireTexte(buffer) {
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  if (utf8.indexOf("\uFFFD") < 0) return utf8;
+  try { return new TextDecoder("windows-1252").decode(buffer); } catch { return utf8; }
+}
+
+async function envoyer(fichiers, codeAttendu, idLigne) {
+  const rid = E.depot.restaurant_id;
+  const bornes = bornesMois(E.depot.mois);
+  const ligne = document.getElementById("l" + idLigne);
+  const detail = ligne.querySelector(".detail");
+  const bouton = ligne.querySelector(".bouton-depot");
+  const dejaFait = ligne.dataset.fait === "1";
+  const originel = detail.textContent.trim();
+  const initial = bouton.textContent;
+  bouton.disabled = true; bouton.textContent = "…";
+
+  let aTraiter;
+  try {
+    detail.textContent = "lecture des fichiers…";
+    aTraiter = await deplier(fichiers);
+  } catch (e) {
+    detail.innerHTML = '<span style="color:var(--close)">' + esc(e.message) + '</span>';
+    bouton.disabled = false; bouton.textContent = initial; return;
+  }
+
+  let ok = 0, lignesLues = 0, aQualifier = 0, decale = false;
+  const soucis = [], deja = [];
+  for (const f of aTraiter) {
+    detail.textContent = "envoi de " + f.name + "…";
+    try {
+      const d = await api("import", "deposer", { contenu:f.contenu, nom_fichier:f.name,
+        restaurant_id:rid, periode_debut:bornes[0], periode_fin:bornes[1] });
+      const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
+      const recu = d.synthese ? "SYNTHESE" : d.type;
+      // Le type est reconnu à l'en-tête, pas à la ligne visée : un fichier
+      // lâché au mauvais endroit part quand même au bon. Mais alors la
+      // ligne cliquée ne reflète plus la réalité, et c'est toute la
+      // checklist qu'il faut relire en base.
+      if (!(recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES"))) {
+        decale = true;
+        soucis.push(f.name + " est un rapport " + recu + " : rangé sur sa propre ligne");
+      }
+      ok++; lignesLues += d.nb || 0;
+      if (d.libelles_a_qualifier) aQualifier += d.libelles_a_qualifier.length;
+    } catch (e) {
+      // Redéposer un fichier identique n'est pas une erreur : le contrôle
+      // d'empreinte a fait son travail et il n'y a rien à corriger.
+      if (/déjà déposé/i.test(e.message)) deja.push(f.name);
+      else soucis.push(f.name + " : " + e.message);
+    }
+  }
+
+  if (ok) {
+    ligne.dataset.fait = "1";
+    bouton.textContent = "Remplacer"; bouton.classList.add("fait");
+    detail.innerHTML = '<span style="color:var(--open);font-weight:600">✓ déposé</span> · ' +
+      lignesLues + ' lignes' +
+      (soucis.length ? ' · <span style="color:var(--vacances)">' +
+        soucis.map(esc).join(' · ') + '</span>' : '') +
+      (decale ? ' <span style="color:var(--ink-3)">— la liste se remet à jour…</span>' : '');
+    if (!dejaFait) majJauge(1);
+  } else if (deja.length && !soucis.length) {
+    bouton.textContent = initial;
+    detail.innerHTML = '<span style="color:var(--ink-3)">' + originel +
+      (originel ? ' · ' : '') + 'ce fichier est déjà en base, rien à refaire</span>';
+  } else {
+    bouton.textContent = initial;
+    detail.innerHTML = '<span style="color:var(--close)">' + esc(soucis.join(" · ")) +
+      (deja.length ? ' · ' + deja.length + ' fichier(s) déjà en base' : '') + '</span>';
+  }
+  bouton.disabled = false;
+  annoncer(aQualifier);
+
+  // Rechargement : seule la base dit la vérité sur ce qui est déposé.
+  if (decale) setTimeout(() => aller("depot", { mois: E.depot.mois }), 1600);
+}
+
+function majJauge(n) {
+  E.faits = Math.min((E.faits || 0) + n, E.attendus);
+  const j = document.getElementById("jauge"), c = document.getElementById("compteur");
+  if (j) j.style.width = (E.attendus ? E.faits / E.attendus * 100 : 0) + "%";
+  if (c) c.textContent = E.faits + " sur " + E.attendus;
+}
+
+function annoncer(aQualifier) {
+  E.bilan = { qualif: (E.bilan ? E.bilan.qualif : 0) + aQualifier };
+  const b = document.getElementById("bilan");
+  if (!b) return;
+  const cible = "{restaurant_id:" + E.depot.restaurant_id + ",mois:'" + E.depot.mois + "-01'}";
+  const p = ['<a href="#" onclick="aller(\'ecarts\',' + cible + ');return false">' +
+    'Voir les écarts de ' + moisLisible(E.depot.mois + "-01") + '</a>'];
+  if (E.bilan.qualif) p.push('<a href="#" onclick="aller(\'remises\');return false">' +
+    E.bilan.qualif + ' remise(s) à qualifier</a>');
+  b.innerHTML = '<div class="alerte info">' + p.join(" · ") + '</div>';
+}
+
+/* ---------- remises ---------- */
+
+const ETATS = [["A_QUALIFIER","À qualifier"],["AUTORISE","Normales"],
+               ["OPERATION","Opérations"],["NON_AUTORISE","Non autorisées"]];
+const MOT_ETAT = { A_QUALIFIER:"à qualifier", AUTORISE:"normale",
+                   OPERATION:"opération commerciale", NON_AUTORISE:"non autorisée" };
+
+async function vueRemises(params) {
+  const statut = (params && params.statut) || (E.rem && E.rem.statut) || "A_QUALIFIER";
+  E.rem = { statut };
+  const d = await api("audit", "libelles", { statut });
+  const c = d.compte || {};
+
+  const onglets = '<div class="actions" style="margin:0 0 16px">' +
+    ETATS.map(o => '<button' + (statut === o[0] ? ' class="fort"' : '') +
+      ' onclick="aller(\'remises\',{statut:\'' + o[0] + '\'})">' + o[1] +
+      ' <span style="opacity:.7">' + (c[o[0]] || 0) + '</span></button>').join("") + '</div>';
+
+  const familles = {};
+  d.libelles.forEach(function(l){
+    const f = l.famille || "SANS FAMILLE";
+    (familles[f] = familles[f] || []).push(l);
+  });
+  const noms = Object.keys(familles).sort((a,b) => familles[b].length - familles[a].length);
+
+  $("#vue").innerHTML =
+    '<h2>Remises</h2>' +
+    '<p class="sous">Les libellés rencontrés dans les exports. Qualifier une famille évite ' +
+      'qu\'une opération commerciale nationale passe pour une anomalie. Un classement se ' +
+      'corrige à tout moment.</p>' + onglets +
+    (noms.length ? noms.map(function(f){
+      const l = familles[f], ids = l.map(x => x.id).join(",");
+      const cle = "g" + f.replace(/[^a-zA-Z0-9]/g,"");
+      return '<div class="bloc"><div class="ligne"><div class="corps">' +
+        '<div class="titre">' + esc(f) + ' <span class="etiquette">' + l.length + '</span></div>' +
+        '<div class="detail">' + esc(l.slice(0,3).map(x => x.libelle).join(" · ")) +
+        (l.length > 3 ? " · et " + (l.length - 3) + " autre(s)" : "") + '</div>' +
+        '<div class="actions">' + boutons(ids, statut) +
+        '<button onclick="basculer(\'' + cle + '\')">Détail</button></div></div></div>' +
+        '<div id="' + cle + '" style="display:none">' + l.map(function(x){
+          return '<div class="ligne"><div class="corps"><div class="titre">' +
+            esc(x.libelle) + '</div><div class="detail">Vu du ' + jour(x.premiere_vue) +
+            ' au ' + jour(x.derniere_vue) + ' · ' + MOT_ETAT[x.statut] + '</div>' +
+            '<div class="actions">' + boutons(String(x.id), x.statut) + '</div></div></div>';
+        }).join("") + '</div></div>';
+    }).join("")
+    : '<div class="bloc"><div class="vide"><b>Aucun libellé dans cet état</b>' +
+      'Changez d\'onglet pour voir les autres.</div></div>');
+}
+
+function boutons(ids, actuel) {
+  const b = [];
+  if (actuel !== "AUTORISE")
+    b.push('<button onclick="qualifier([' + ids + '],\'AUTORISE\',0)">Normale</button>');
+  if (actuel !== "OPERATION")
+    b.push('<button onclick="qualifier([' + ids + '],\'OPERATION\',1)">Opération</button>');
+  if (actuel !== "NON_AUTORISE")
+    b.push('<button onclick="qualifier([' + ids + '],\'NON_AUTORISE\',0)">Non autorisée</button>');
+  if (actuel !== "A_QUALIFIER")
+    b.push('<button onclick="qualifier([' + ids + '],\'A_QUALIFIER\',0)">À qualifier</button>');
+  return b.join("");
+}
+
+async function qualifier(ids, statut, neutralise) {
+  for (const id of ids)
+    await api("audit", "qualifierLibelle", { id, statut, neutralise });
+  aller("remises", { statut: E.rem.statut });
+}
+
+/* ---------- équipe ---------- */
+
+const FONCTIONS = ["EQUIPIER","LEADER","SHIFT_LEADER","MANAGER","DIRECTEUR"];
+const POSTES = ["DRIVE","BORNE","COMPTOIR","MIXTE"];
+
+// Règle Cash Système : 4 lettres du nom + 3 du prénom. BAUDRY Laurence
+// donne BAUDLAU. L'app propose, le directeur valide.
+function badgeProbable(nomComplet) {
+  const t = String(nomComplet || "").trim().split(/\s+/);
+  if (t.length < 2) return "";
+  return (t[0].slice(0,4) + t[1].slice(0,3)).toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+async function vueEquipe(params) {
+  const rid = E.resto;
+  if (!rid) return retourRestos();
+  E.eq = { restaurant_id: rid };
+  const d = await api("audit", "salaries", { restaurant_id: rid });
+  E.salaries = d.salaries;
+
+  $("#vue").innerHTML =
+    '<h2>Équipe</h2>' +
+    '<p class="sous">C\'est ici que les badges de caisse deviennent des noms. Tant qu\'un badge ' +
+      'n\'est pas renseigné, ses écarts s\'affichent en trigramme illisible.</p>' +
+
+    ((d.inconnus_encadrants || []).length ? '<div class="bloc">' +
+      '<div class="carte-titre">Encadrants à enregistrer · ' + d.inconnus_encadrants.length + '</div>' +
+      '<div class="note">Ce sont eux qui valident les comptages de caisse. Leur nom complet ' +
+        'figure dans la déclaration, la fiche est déjà pré-remplie : il ne reste qu\'à ' +
+        'confirmer.</div>' +
+      d.inconnus_encadrants.map(e =>
+        '<button class="ligne" onclick="fiche(null,\'' + e.badge_code + '\',\'' +
+          esc(e.nom_propose || "") + '\',\'MANAGER\')">' +
+        '<div class="corps"><div class="titre">' + esc(e.nom_propose || e.badge_code) + '</div>' +
+        '<div class="detail">badge ' + esc(e.badge_code) + '</div></div>' +
+        '<span class="etiquette urgent">à confirmer</span></button>').join("") + '</div>' : "") +
+
+    ((d.inconnus_equipiers || []).length ? '<div class="bloc">' +
+      '<button class="ligne" onclick="basculer(\'equipiers\')">' +
+        '<div class="corps"><div class="titre">' + d.inconnus_equipiers.length +
+          ' équipier(s) non enregistré(s)</div>' +
+        '<div class="detail">Leur nom n\'apparaît nulle part dans les exports, seulement leur ' +
+          'trigramme. À compléter si vous voulez lire leurs noms dans les écarts.</div></div>' +
+        '<span class="etiquette">facultatif</span></button>' +
+      '<div id="equipiers" style="display:none">' +
+        d.inconnus_equipiers.map(b => '<button class="ligne" onclick="fiche(null,\'' + b + '\')">' +
+          '<div class="corps"><div class="titre">' + esc(b) + '</div></div>' +
+          '<span class="etiquette">à compléter</span></button>').join("") +
+      '</div></div>' : "") +
+    '<div class="bloc">' +
+      '<div class="carte-titre">Enregistrés · ' + d.salaries.length + '</div>' +
+      (d.salaries.length ? d.salaries.map(s =>
+        '<button class="ligne" onclick="fiche(' + s.id + ')">' +
+        '<div class="corps"><div class="titre">' + esc(s.badge_code) +
+          (s.nom_complet ? " · " + esc(s.nom_complet) : "") + '</div><div class="detail">' +
+          esc(s.fonction || "fonction à préciser") + ' · ' +
+          esc(s.poste_habituel || "poste à préciser") + '</div></div>' +
+        (s.confiance_mapping === "VALIDE" ? '<span class="etiquette ok">validé</span>'
+                                          : '<span class="etiquette urgent">à valider</span>') +
+        '</button>').join("")
+      : '<div class="vide"><b>Aucun salarié</b>Les badges apparaîtront après le premier dépôt.</div>') +
+    '</div>' +
+    '<div class="actions"><button class="fort" onclick="fiche(null)">Ajouter une personne</button></div>' +
+    '<div id="formulaire"></div>';
+}
+
+function fiche(id, badgePropose, nomPropose, fonctionProposee) {
+  const s = id ? (E.salaries.find(x => x.id === id) || {}) : {};
+  const badge = badgePropose || s.badge_code || "";
+  const nom = s.nom_complet || nomPropose || "";
+  const fonction = s.fonction || fonctionProposee || "";
+  document.getElementById("formulaire").innerHTML =
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">' +
+        (id ? "Modifier " + esc(badge) : badgePropose ? "Compléter " + esc(badgePropose)
+                                                      : "Ajouter une personne") + '</h3>' +
+      '<label class="champ"><span>Nom et prénom</span><input id="s-nom" value="' +
+        esc(nom) + '" oninput="proposer()" placeholder="BAUDRY Laurence"></label>' +
+      '<label class="champ"><span>Badge en caisse</span><input id="s-badge" value="' +
+        esc(badge) + '" placeholder="BAUDLAU"></label>' +
+      '<p class="sous" id="s-aide" style="margin:-8px 0 14px;font-size:12.5px"></p>' +
+      '<label class="champ"><span>Fonction</span><select id="s-fonction">' +
+        '<option value="">à préciser</option>' + FONCTIONS.map(f =>
+          '<option value="' + f + '"' + (fonction === f ? " selected" : "") + '>' +
+          f.replace("_"," ") + '</option>').join("") + '</select></label>' +
+      '<label class="champ"><span>Poste habituel</span><select id="s-poste">' +
+        '<option value="">à préciser</option>' + POSTES.map(p =>
+          '<option value="' + p + '"' + (s.poste_habituel === p ? " selected" : "") + '>' +
+          p + '</option>').join("") + '</select></label>' +
+      '<label class="champ"><span>Date de prise de poste (facultatif)</span>' +
+        '<input id="s-date" type="date" value="' + esc(s.date_prise_poste || "") + '"></label>' +
+      '<div id="err-salarie"></div>' +
+      '<div class="actions" style="margin-top:0">' +
+        '<button class="fort" onclick="enregistrer(' + (id || "null") + ')">Enregistrer</button>' +
+        '<button onclick="document.getElementById(\'formulaire\').innerHTML=\'\'">Annuler</button>' +
+        (id ? '<button style="color:var(--close)" onclick="supprimer(' + id + ')">Supprimer</button>' : "") +
+      '</div></div></div>';
+  document.getElementById("formulaire").scrollIntoView({ behavior:"smooth", block:"nearest" });
+  proposer();
+}
+
+function proposer() {
+  const champ = $("#s-badge"), aide = $("#s-aide");
+  if (!champ || !aide) return;
+  const p = badgeProbable(($("#s-nom") || {}).value || "");
+  if (p && !champ.value) champ.value = p;
+  aide.textContent = p && champ.value !== p
+    ? "Le badge attendu pour ce nom serait " + p + ". Vérifiez avant d'enregistrer."
+    : p ? "Badge construit sur 4 lettres du nom + 3 du prénom." : "";
+}
+
+async function enregistrer(id) {
+  const badge = $("#s-badge").value.trim().toUpperCase();
+  if (!badge) { $("#err-salarie").innerHTML =
+    '<div class="alerte erreur">Le badge est obligatoire.</div>'; return; }
+  try {
+    await api("audit", "majSalarie", { id: id || undefined, restaurant_id: E.eq.restaurant_id,
+      badge_code: badge, nom_complet: $("#s-nom").value.trim() || null,
+      fonction: $("#s-fonction").value || null, poste_habituel: $("#s-poste").value || null,
+      date_prise_poste: $("#s-date").value || null });
+    aller("equipe", { restaurant_id: E.eq.restaurant_id });
+  } catch (e) {
+    $("#err-salarie").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
+}
+
+async function supprimer(id) {
+  try {
+    await api("audit", "supprimerSalarie", { id, restaurant_id: E.eq.restaurant_id });
+    aller("equipe", { restaurant_id: E.eq.restaurant_id });
+  } catch (e) {
+    $("#err-salarie").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
+}
+
+/* ---------- accès ---------- */
+
+async function vueAdmin() {
+  const [d, r] = await Promise.all([
+    api("audit", "utilisateurs"),
+    api("audit", "restaurants")
+  ]);
+  E.restos_admin = r.restaurants;
+  E.types_impl = r.types;
+  $("#vue").innerHTML =
+    '<h2>Accès</h2>' +
+    '<p class="sous">Un directeur dépose et consulte son restaurant.</p>' +
+
+    /* Ouvrir un site ne doit pas demander de passer par l'éditeur SQL :
+       Étaples arrive, et il y en aura d'autres. */
+    '<div class="bloc">' +
+      '<div class="carte-titre">Restaurants · ' + r.restaurants.length + '</div>' +
+      r.restaurants.map(x =>
+        '<button class="ligne" onclick="ficheResto(' + x.id + ')">' +
+          '<div class="corps"><div class="titre">' + esc(x.nom) + '</div>' +
+          '<div class="detail">' + esc(x.code_cash || "code Cash Système à préciser") +
+            (x.type_implantation ? ' · ' + esc(x.type_implantation) : '') + '</div></div>' +
+          (x.actif ? '' : '<span class="etiquette">fermé</span>') + '</button>').join("") +
+    '</div>' +
+    '<div class="actions" style="margin-bottom:18px">' +
+      '<button class="fort" onclick="ficheResto(null)">Ouvrir un restaurant</button></div>' +
+    '<div id="form-resto"></div>' +
+    '<div class="bloc">' + d.utilisateurs.map(function(u){
+      const n = d.perimetres.filter(p => p.utilisateur_id === u.id).length;
+      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
+        '<div class="detail">' + esc(u.role) + ' · ' + n + ' restaurant(s) · ' +
+        (u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté") +
+        '</div></div>' + (u.actif ? "" : '<span class="etiquette">inactif</span>') + '</div>';
+    }).join("") + '</div>' +
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>' +
+      '<label class="champ"><span>Nom</span><input id="n-nom"></label>' +
+      '<label class="champ"><span>E-mail</span><input id="n-email" type="email"></label>' +
+      '<label class="champ"><span>Rôle</span><select id="n-role">' +
+        '<option value="DIRECTEUR">Directeur</option>' +
+        '<option value="SUPERVISEUR">Superviseur</option>' +
+        '<option value="CDG">Contrôle de gestion</option>' +
+        '<option value="DG">Direction générale</option></select></label>' +
+      '<label class="champ"><span>Code (6 chiffres minimum hors directeur)</span>' +
+        '<input id="n-pin" inputmode="numeric"></label>' +
+      '<label class="champ"><span>Restaurants</span><select id="n-restos" multiple size="7">' +
+        E.restaurants.map(r => '<option value="' + r.id + '">' + esc(r.nom) + '</option>').join("") +
+        '</select></label><div id="err-admin"></div>' +
+      '<button class="principal" onclick="creerUtilisateur()">Créer l\'accès</button>' +
+    '</div></div>';
+}
+
+function ficheResto(id) {
+  const x = id ? (E.restos_admin.find(r => r.id === id) || {}) : {};
+  document.getElementById("form-resto").innerHTML =
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">' +
+        (id ? "Modifier " + esc(x.nom) : "Ouvrir un restaurant") + '</h3>' +
+      '<label class="champ"><span>Nom</span><input id="r-nom" value="' +
+        esc(x.nom || "") + '" placeholder="ETAPLES"></label>' +
+      '<label class="champ"><span>Code Cash Système</span><input id="r-code" value="' +
+        esc(x.code_cash || "") + '" placeholder="8"></label>' +
+      '<p class="sous" style="margin:-8px 0 14px;font-size:12.5px">Le code qui identifie le ' +
+        'site dans les exports. Sans lui, les dépôts fonctionnent mais aucun contrôle de ' +
+        'provenance n\'est possible.</p>' +
+      '<label class="champ"><span>Type d\'implantation</span>' +
+        '<input id="r-type" list="types-impl" value="' + esc(x.type_implantation || "") + '">' +
+        '<datalist id="types-impl">' + (E.types_impl || []).map(t =>
+          '<option value="' + esc(t) + '">').join("") + '</datalist></label>' +
+      (id ? '<label class="champ"><span>Statut</span><select id="r-actif">' +
+        '<option value="1"' + (x.actif ? " selected" : "") + '>ouvert</option>' +
+        '<option value="0"' + (x.actif ? "" : " selected") + '>fermé</option></select></label>'
+        : '') +
+      '<div id="err-resto"></div>' +
+      '<div class="actions" style="margin-top:0">' +
+        '<button class="fort" onclick="enregistrerResto(' + (id || "null") + ')">' +
+          'Enregistrer</button>' +
+        '<button onclick="document.getElementById(\'form-resto\').innerHTML=\'\'">' +
+          'Annuler</button></div>' +
+    '</div></div>';
+  document.getElementById("form-resto").scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+
+async function enregistrerResto(id) {
+  const nom = $("#r-nom").value.trim();
+  if (!nom) { $("#err-resto").innerHTML =
+    '<div class="alerte erreur">Le nom est obligatoire.</div>'; return; }
+  try {
+    const r = await api("audit", "majRestaurant", { id: id || undefined, nom,
+      code_cash: $("#r-code").value.trim() || null,
+      type_implantation: $("#r-type").value.trim() || null,
+      actif: id ? $("#r-actif").value === "1" : true });
+    // le nouveau site doit apparaître tout de suite dans les sélecteurs
+    const m = await api("audit", "moi");
+    Object.assign(E, m);
+    aller("admin");
+    if (r.perimetres_ouverts)
+      alert("Restaurant ouvert. Accès accordé à " + r.perimetres_ouverts +
+            " personne(s) de l'encadrement. Les directeurs de site restent à ajouter.");
+  } catch (e) {
+    $("#err-resto").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
+}
+
+async function creerUtilisateur() {
+  const role = $("#n-role").value;
+  const perimetres = Array.prototype.map.call($("#n-restos").selectedOptions, o =>
+    ({ restaurant_id:Number(o.value), peut_deposer:true, peut_lire:true,
+       peut_cloturer: role !== "DIRECTEUR" }));
+  try {
+    await api("audit", "creerUtilisateur", { nom:$("#n-nom").value.trim(),
+      email:$("#n-email").value.trim(), role, pin:$("#n-pin").value.trim(), perimetres });
+    aller("admin");
+  } catch (e) { $("#err-admin").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>'; }
+}
+
+/* ---------- amorçage ---------- */
+
+E.jeton = localStorage.getItem("jeton-audit");
+if (E.jeton) demarrer().catch(seDeconnecter);
+</script>
+</body>
+</html>
