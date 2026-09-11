@@ -185,22 +185,36 @@ const actions = {
       sb(`imports?restaurant_id=in.(${restos.join(",")})&periode_debut=lte.${fin}`
         + `&periode_fin=gte.${debut}&select=*&order=depose_le.desc`)
     ]);
-    // Un rapport absent de ce mois peut très bien être enregistré sous un
-    // autre : c'est le cas des quatre rapports non datés, dont la période
-    // vient de l'écran de dépôt. Sans cette information, la ligne propose
-    // un dépôt que l'empreinte refusera, sans dire pourquoi.
+    // Quatre rapports ne portent aucune date : leur période vient de
+    // l'écran de dépôt, donc une erreur de mois est possible. On ne le
+    // signale QUE si le mois où ils sont rangés ne contient aucune
+    // déclaration de caisse : sans caisses, ces chiffres ne se rattachent
+    // à rien et le dépôt est presque sûrement égaré.
+    //
+    // Pour les rapports datés, la période est lue dans le fichier : un
+    // dépôt sous mai est un dépôt de mai. Le signaler reviendrait à
+    // proposer de défaire du travail correct — c'est ce que faisait la
+    // première version de ce contrôle.
+    const SANS_DATE = ["FLUX_CAISSIERS_1", "FLUX_CAISSIERS_2", "TICKETS_NON_PAYANTS",
+                       "SYNTHESE_CA", "FLUX_RESP_1"];
     const ailleurs = {};
     if (restos.length === 1) {
-      const autres = await sb(`imports?restaurant_id=eq.${restos[0]}&statut=eq.OK`
-        + `&or=(periode_debut.gt.${fin},periode_fin.lt.${debut})`
-        + `&select=id,type_rapport_code,periode_debut,periode_fin,nb_lignes`
-        + `&order=periode_debut.desc&limit=200`);
+      const [autres, moisAvecCaisses] = await Promise.all([
+        sb(`imports?restaurant_id=eq.${restos[0]}&statut=eq.OK`
+          + `&type_rapport_code=in.(${SANS_DATE.join(",")})`
+          + `&or=(periode_debut.gt.${fin},periode_fin.lt.${debut})`
+          + `&select=id,type_rapport_code,periode_debut,periode_fin,nb_lignes`
+          + `&order=periode_debut.desc&limit=200`),
+        sb(`v_caisses_ecarts?restaurant_id=eq.${restos[0]}&select=mois`)
+      ]);
+      const avecCaisses = new Set(moisAvecCaisses.map(m => String(m.mois).slice(0, 7)));
       autres.forEach(function (i) {
+        const m = String(i.periode_debut).slice(0, 7);
+        if (avecCaisses.has(m)) return;          // mois cohérent, rien à signaler
         const e = ailleurs[i.type_rapport_code];
-        // la Synthèse CA compte neuf fichiers pour un seul rapport : on
-        // annonce le nombre, sinon « 1 lignes » laisse croire à un raté
+        // la Synthèse CA compte neuf fichiers pour un seul rapport
         if (!e) ailleurs[i.type_rapport_code] = { ...i, fichiers: 1 };
-        else if (String(e.periode_debut).slice(0, 7) === String(i.periode_debut).slice(0, 7)) {
+        else if (String(e.periode_debut).slice(0, 7) === m) {
           e.fichiers++;
           e.nb_lignes = (Number(e.nb_lignes) || 0) + (Number(i.nb_lignes) || 0);
         }
