@@ -196,7 +196,14 @@ const actions = {
         + `&select=id,type_rapport_code,periode_debut,periode_fin,nb_lignes`
         + `&order=periode_debut.desc&limit=200`);
       autres.forEach(function (i) {
-        if (!ailleurs[i.type_rapport_code]) ailleurs[i.type_rapport_code] = i;
+        const e = ailleurs[i.type_rapport_code];
+        // la Synthèse CA compte neuf fichiers pour un seul rapport : on
+        // annonce le nombre, sinon « 1 lignes » laisse croire à un raté
+        if (!e) ailleurs[i.type_rapport_code] = { ...i, fichiers: 1 };
+        else if (String(e.periode_debut).slice(0, 7) === String(i.periode_debut).slice(0, 7)) {
+          e.fichiers++;
+          e.nb_lignes = (Number(e.nb_lignes) || 0) + (Number(i.nb_lignes) || 0);
+        }
       });
     }
 
@@ -207,31 +214,39 @@ const actions = {
     };
   },
 
-  // Retirer un dépôt. Indispensable : la période des rapports non datés
-  // vient de l'écran de dépôt, donc une erreur de mois est possible, et
-  // il ne faut pas avoir à passer par l'éditeur SQL pour la défaire.
-  async retirerImport({ id, restaurant_id }, ctx) {
+  // Retirer un dépôt. Le retrait porte sur le RAPPORT et le MOIS, pas sur
+  // un identifiant : la Synthèse CA compte neuf fichiers, donc neuf lignes
+  // d'import pour un seul rapport. Retirer la première en laissait huit.
+  async retirerDepot({ restaurant_id, type, mois }, ctx) {
     const rid = Number(restaurant_id);
     if (!ctx.depot.includes(rid)) return { erreur: "Dépôt non autorisé sur ce restaurant." };
-    const [imp] = await sb(`imports?id=eq.${Number(id)}&select=*`);
-    if (!imp || imp.restaurant_id !== rid) return { erreur: "Dépôt introuvable." };
+    if (!type || !mois) return { erreur: "Rapport ou mois manquant." };
 
-    // Les lignes partent avec l'import par clé étrangère. Les tables
-    // mensuelles cumulées (flux caissiers, tickets non payants) sont
-    // alimentées en upsert par mois et par badge : on les efface
-    // explicitement, sinon elles survivraient à la suppression.
-    const mois = String(imp.periode_debut).slice(0, 8) + "01";
+    const debut = String(mois).slice(0, 7) + "-01";
+    const d = new Date(debut);
+    const suivant = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10);
+
+    const cibles = await sb(`imports?restaurant_id=eq.${rid}`
+      + `&type_rapport_code=eq.${encodeURIComponent(type)}`
+      + `&periode_debut=gte.${debut}&periode_debut=lt.${suivant}`
+      + `&select=id,nb_lignes,periode_debut,periode_fin`);
+    if (!cibles.length) return { erreur: "Aucun dépôt à retirer pour ce mois." };
+
+    // Les tables mensuelles cumulées sont alimentées en upsert par mois et
+    // par badge : les lignes ne partent pas avec l'import, il faut les
+    // effacer explicitement.
     const cumulees = { FLUX_CAISSIERS_1: "flux_caissiers", FLUX_CAISSIERS_2: "flux_caissiers",
                        TICKETS_NON_PAYANTS: "tickets_non_payants",
                        FLUX_RESP_1: "flux_responsables" };
-    const table = cumulees[imp.type_rapport_code];
-    if (table)
-      await sb(`${table}?restaurant_id=eq.${rid}&mois=eq.${mois}`,
+    if (cumulees[type])
+      await sb(`${cumulees[type]}?restaurant_id=eq.${rid}&mois=eq.${debut}`,
         { method: "DELETE", prefer: "return=minimal" });
 
-    await sb(`imports?id=eq.${Number(id)}`, { method: "DELETE", prefer: "return=minimal" });
-    return { ok: true, type: imp.type_rapport_code, nb_lignes: imp.nb_lignes,
-             periode: [imp.periode_debut, imp.periode_fin] };
+    await sb(`imports?id=in.(${cibles.map(c => c.id).join(",")})`,
+      { method: "DELETE", prefer: "return=minimal" });
+
+    return { ok: true, type, mois: debut, fichiers: cibles.length,
+             nb_lignes: cibles.reduce((t, c) => t + (Number(c.nb_lignes) || 0), 0) };
   },
 
   // Libellés de remise. Sans ce garde-fou, la roulette drive de juin 2026
