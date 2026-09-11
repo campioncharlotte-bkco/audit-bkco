@@ -1020,10 +1020,11 @@ function ligneDepot(t, imp, ailleurs) {
     '<div style="display:flex;flex-direction:column;gap:6px;align-self:center">' +
       '<button class="bouton-depot' + (imp ? " fait" : "") + '" onclick="document.getElementById(\'' +
         id + '\').click()">' + (imp ? "Remplacer" : "Déposer") + '</button>' +
-      (imp ? '<button class="bouton-depot" style="color:var(--close)" onclick="retirerImport(' +
-        imp.id + ')">Retirer</button>'
+      (imp ? '<button class="bouton-depot" style="color:var(--close)" onclick="retirerDepot(\'' +
+        t.code + '\',\'' + String(imp.periode_debut).slice(0, 7) + '\')">Retirer</button>'
         : ailleurs ? '<button class="bouton-depot" style="color:var(--vacances)" ' +
-            'onclick="retirerImport(' + ailleurs.id + ')">Retirer de ' +
+            'onclick="retirerDepot(\'' + t.code + '\',\'' +
+            String(ailleurs.periode_debut).slice(0, 7) + '\')">Retirer de ' +
             moisLisible(String(ailleurs.periode_debut).slice(0, 7) + "-01").split(" ")[0] +
             '</button>' : '') +
     '</div></div>';
@@ -1031,17 +1032,18 @@ function ligneDepot(t, imp, ailleurs) {
 
 /* Défaire un dépôt : les lignes partent avec lui. C'est le seul remède à
    un fichier rangé dans le mauvais mois. */
-async function retirerImport(id) {
-  if (!confirm("Retirer ce dépôt ? Les lignes qu'il a créées seront effacées.")) return;
+async function retirerDepot(type, mois) {
+  if (!confirm("Retirer ce rapport pour " + moisLisible(mois + "-01") +
+               " ? Les lignes qu'il a créées seront effacées.")) return;
   try {
-    const d = await api("audit", "retirerImport",
-      { id: id, restaurant_id: E.depot.restaurant_id });
+    const d = await api("audit", "retirerDepot",
+      { restaurant_id: E.depot.restaurant_id, type: type, mois: mois });
     aller("depot", { mois: E.depot.mois });
     setTimeout(function () {
       const b = document.getElementById("bilan");
-      if (b) b.innerHTML = '<div class="alerte info">Dépôt retiré : ' + esc(d.type) +
-        ', ' + (d.nb_lignes || 0) + ' lignes, période ' + jour(d.periode[0]) + ' → ' +
-        jour(d.periode[1]) + '.</div>';
+      if (b) b.innerHTML = '<div class="alerte info">Retiré : ' + esc(d.type) + ' · ' +
+        moisLisible(d.mois) + ' · ' + d.fichiers + ' fichier(s), ' +
+        (d.nb_lignes || 0) + ' lignes.</div>';
     }, 400);
   } catch (e) { alert(e.message); }
 }
