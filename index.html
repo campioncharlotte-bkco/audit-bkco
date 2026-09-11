@@ -1030,6 +1030,7 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
   const detail = ligne.querySelector(".detail");
   const bouton = ligne.querySelector(".bouton-depot");
   const dejaFait = ligne.dataset.fait === "1";
+  const originel = detail.textContent.trim();
   const initial = bouton.textContent;
   bouton.disabled = true; bouton.textContent = "…";
 
@@ -1042,8 +1043,8 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
     bouton.disabled = false; bouton.textContent = initial; return;
   }
 
-  let ok = 0, lignesLues = 0, aQualifier = 0;
-  const soucis = [];
+  let ok = 0, lignesLues = 0, aQualifier = 0, decale = false;
+  const soucis = [], deja = [];
   for (const f of aTraiter) {
     detail.textContent = "envoi de " + f.name + "…";
     try {
@@ -1051,25 +1052,47 @@ async function envoyer(fichiers, codeAttendu, idLigne) {
         restaurant_id:rid, periode_debut:bornes[0], periode_fin:bornes[1] });
       const attendu = codeAttendu === "SYNTHESE_CA" ? "SYNTHESE" : codeAttendu;
       const recu = d.synthese ? "SYNTHESE" : d.type;
-      if (!(recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES")))
-        soucis.push(f.name + " contient un rapport " + recu + " : rangé au bon endroit");
+      // Le type est reconnu à l'en-tête, pas à la ligne visée : un fichier
+      // lâché au mauvais endroit part quand même au bon. Mais alors la
+      // ligne cliquée ne reflète plus la réalité, et c'est toute la
+      // checklist qu'il faut relire en base.
+      if (!(recu === attendu || (codeAttendu === "REMISES_50" && recu === "REMISES"))) {
+        decale = true;
+        soucis.push(f.name + " est un rapport " + recu + " : rangé sur sa propre ligne");
+      }
       ok++; lignesLues += d.nb || 0;
       if (d.libelles_a_qualifier) aQualifier += d.libelles_a_qualifier.length;
-    } catch (e) { soucis.push(f.name + " : " + e.message); }
+    } catch (e) {
+      // Redéposer un fichier identique n'est pas une erreur : le contrôle
+      // d'empreinte a fait son travail et il n'y a rien à corriger.
+      if (/déjà déposé/i.test(e.message)) deja.push(f.name);
+      else soucis.push(f.name + " : " + e.message);
+    }
   }
 
   if (ok) {
     ligne.dataset.fait = "1";
     bouton.textContent = "Remplacer"; bouton.classList.add("fait");
     detail.innerHTML = '<span style="color:var(--open);font-weight:600">✓ déposé</span> · ' +
-      lignesLues + ' lignes' + (soucis.length ? ' · ' + soucis.map(esc).join(' · ') : '');
+      lignesLues + ' lignes' +
+      (soucis.length ? ' · <span style="color:var(--vacances)">' +
+        soucis.map(esc).join(' · ') + '</span>' : '') +
+      (decale ? ' <span style="color:var(--ink-3)">— la liste se remet à jour…</span>' : '');
     if (!dejaFait) majJauge(1);
+  } else if (deja.length && !soucis.length) {
+    bouton.textContent = initial;
+    detail.innerHTML = '<span style="color:var(--ink-3)">' + originel +
+      (originel ? ' · ' : '') + 'ce fichier est déjà en base, rien à refaire</span>';
   } else {
     bouton.textContent = initial;
-    detail.innerHTML = '<span style="color:var(--close)">' + esc(soucis.join(" · ")) + '</span>';
+    detail.innerHTML = '<span style="color:var(--close)">' + esc(soucis.join(" · ")) +
+      (deja.length ? ' · ' + deja.length + ' fichier(s) déjà en base' : '') + '</span>';
   }
   bouton.disabled = false;
   annoncer(aQualifier);
+
+  // Rechargement : seule la base dit la vérité sur ce qui est déposé.
+  if (decale) setTimeout(() => aller("depot", { mois: E.depot.mois }), 1600);
 }
 
 function majJauge(n) {
