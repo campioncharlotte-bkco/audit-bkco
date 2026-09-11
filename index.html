@@ -815,8 +815,11 @@ async function vueEncadrants() {
   $("#vue").innerHTML =
     '<h2>Encadrants</h2>' +
     '<p class="sous">Qui valide les comptages de caisse, sur toute la période chargée. ' +
-      'Le taux est le seul chiffre comparable entre deux personnes : le montant cumulé ' +
-      'suit le nombre de caisses validées.</p>' +
+      'Le <b>taux</b> est le nombre de comptages en manque de plus de 20 € divisé par le ' +
+      'nombre de caisses validées. C\'est le seul chiffre comparable entre deux personnes, ' +
+      'le montant cumulé suivant le volume de caisses.<br>' +
+      'Un taux calculé sur moins de quatre comptages en manque n\'est pas comparé au ' +
+      'restaurant : à ce niveau, un écart de plus ou de moins le fait doubler.</p>' +
     '<div class="compteurs">' +
       '<div><b>' + l.length + '</b><span>encadrants</span></div>' +
       '<div><b>' + d.validees + '</b><span>caisses validées</span></div>' +
@@ -827,10 +830,18 @@ async function vueEncadrants() {
       '<div class="carte-titre">Du taux le plus élevé au plus faible</div>' +
       l.map(function (e) {
         const t = e.taux === null ? null : Number(e.taux);
-        const ecart = (t !== null && ref !== null && ref > 0)
-          ? (t >= ref * 1.5 ? " · nettement au-dessus du restaurant"
-            : t <= ref * 0.5 ? " · nettement en dessous"
-            : " · dans la moyenne du restaurant") : "";
+        /* Un taux calculé sur deux comptages en manque ne se compare à
+           rien : un événement de plus ou de moins le double. On exige un
+           minimum de caisses validées ET de comptages en manque avant de
+           situer quelqu'un par rapport au restaurant — sans quoi on
+           désigne le hasard. */
+        const comparable = e.validees >= 40 && e.en_manque >= 4;
+        const ecart = !comparable
+          ? " · trop peu d'écarts pour comparer"
+          : (t !== null && ref !== null && ref > 0)
+            ? (t >= ref * 1.5 ? " · nettement au-dessus du restaurant"
+              : t <= ref * 0.5 ? " · nettement en dessous"
+              : " · dans la moyenne du restaurant") : "";
         return '<button class="ligne" onclick="vuePersonne(\'' + e.code + '\')">' +
           '<div class="corps"><div class="titre">' + esc(e.nom) + '</div>' +
           '<div class="detail">' + e.en_manque + ' comptage(s) en manque sur ' + e.validees +
@@ -838,7 +849,9 @@ async function vueEncadrants() {
             (e.urgents ? ' · <span class="etiquette urgent">' + e.urgents +
               ' encore en vidéo</span>' : '') + '</div></div>' +
           '<div style="text-align:right"><div class="montant num' +
-            (t ? ' negatif' : '') + '">' + (t === null ? "—" : t + " %") + '</div>' +
+            (t && comparable ? ' negatif' : '') + '" style="' +
+            (comparable ? '' : 'color:var(--ink-3)') + '">' +
+            (t === null ? "—" : t + " %") + '</div>' +
           '<div class="detail">' + eur0(e.total) + '</div></div></button>';
       }).join("") + '</div>'
     : '<div class="bloc"><div class="vide"><b>Aucun encadrant</b>' +
