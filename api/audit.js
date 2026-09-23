@@ -659,15 +659,25 @@ const actions = {
     return { ok: true, id: u.id };
   },
 
-  async majUtilisateur({ id, actif, role, responsable_id, pin, perimetres }, ctx) {
+  async majUtilisateur({ id, nom, email, actif, role, responsable_id, pin, perimetres }, ctx) {
     if (ctx.role !== "DG") return { erreur: "Réservé à la direction générale." };
+    if (Number(id) === ctx.id && actif === false)
+      return { erreur: "Vous ne pouvez pas désactiver votre propre accès." };
     const maj = {};
+    if (nom) maj.nom = String(nom).trim();
+    if (email) maj.email = String(email).trim();
     if (actif !== undefined) maj.actif = !!actif;
     if (role) maj.role = role;
     if (responsable_id !== undefined) maj.responsable_id = responsable_id || null;
     if (Object.keys(maj).length)
       await sb(`utilisateurs?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(maj) });
-    if (pin) await rpc("definir_pin", { p_utilisateur: Number(id), p_pin: String(pin) });
+    if (pin) {
+      const r = role || (await sb(`utilisateurs?id=eq.${id}&select=role`))[0].role;
+      if (["DG", "SUPERVISEUR", "CDG"].includes(r) && String(pin).length < 6)
+        return { erreur: "Un profil pouvant clore un écart exige un code d'au moins 6 chiffres." };
+      if (String(pin).length < 4) return { erreur: "Code trop court." };
+      await rpc("definir_pin", { p_utilisateur: Number(id), p_pin: String(pin) });
+    }
     if (perimetres) {
       await sb(`perimetres?utilisateur_id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
       if (perimetres.length)
