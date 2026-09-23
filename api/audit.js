@@ -488,6 +488,60 @@ const actions = {
              validees: totalValidees, en_manque: totalManque };
   },
 
+  // Les quatre ratios de comportement, par responsable, comparés entre
+  // collègues du même site. Un taux d'annulation de 1,2 % ne dit rien
+  // dans l'absolu : il dit quelque chose si les autres sont à 0,3 %.
+  async ratios({ restaurant_id }, ctx) {
+    const rid = Number(restaurant_id);
+    if (!dansPerimetre(ctx, rid)) throw new Error("Hors périmètre");
+    const lignes = await sb(`v_responsables_ratios?restaurant_id=eq.${rid}&select=*`);
+
+    const par = {};
+    lignes.forEach(function (l) {
+      if (ctx.masques.includes(l.responsable)) return;
+      const e = par[l.responsable] || (par[l.responsable] = {
+        code: l.responsable, nom: l.nom_affiche || l.responsable,
+        mois: new Set(), caisses: 0, ca: 0, remise: 0, annulation: 0,
+        correction: 0, especes: 0, encaisse: 0,
+        nb_annulation: 0, nb_correction: 0 });
+      e.mois.add(l.mois);
+      e.caisses += Number(l.nb_caisses) || 0;
+      e.ca += Number(l.ca_declare) || 0;
+      e.remise += Number(l.remise) || 0;
+      e.annulation += Number(l.annulation) || 0;
+      e.correction += Number(l.correction) || 0;
+      e.especes += Number(l.especes) || 0;
+      e.encaisse += Number(l.encaisse) || 0;
+      e.nb_annulation += Number(l.nb_annulation) || 0;
+      e.nb_correction += Number(l.nb_correction) || 0;
+    });
+
+    // Taux calculés sur les sommes de la période, jamais comme moyenne de
+    // taux mensuels : les deux diffèrent dès que les volumes varient.
+    const taux = (n, d) => (d > 0 ? Math.round(n / d * 10000) / 100 : null);
+    const liste = Object.values(par).map(e => ({
+      ...e, mois: e.mois.size,
+      ca: Math.round(e.ca),
+      taux_especes: taux(e.especes, e.encaisse),
+      taux_remise: taux(e.remise, e.ca),
+      taux_annulation: taux(e.annulation, e.ca),
+      taux_correction: taux(e.correction, e.ca)
+    })).sort((a, b) => b.ca - a.ca);
+
+    const t = liste.reduce((a, e) => ({
+      caisses: a.caisses + e.caisses, ca: a.ca + e.ca, remise: a.remise + e.remise,
+      annulation: a.annulation + e.annulation, correction: a.correction + e.correction,
+      especes: a.especes + e.especes, encaisse: a.encaisse + e.encaisse
+    }), { caisses: 0, ca: 0, remise: 0, annulation: 0, correction: 0, especes: 0, encaisse: 0 });
+
+    return { responsables: liste,
+      restaurant: { ...t, ca: Math.round(t.ca),
+        taux_especes: taux(t.especes, t.encaisse),
+        taux_remise: taux(t.remise, t.ca),
+        taux_annulation: taux(t.annulation, t.ca),
+        taux_correction: taux(t.correction, t.ca) } };
+  },
+
   // Fiche d'un responsable : sa série mensuelle et tous ses comptages en
   // manque. Le taux est le seul chiffre comparable dans le temps — le
   // nombre brut suit le volume de caisses validées, qui varie d'un mois
