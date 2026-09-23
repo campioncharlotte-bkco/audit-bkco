@@ -1508,6 +1508,8 @@ async function vueAdmin() {
   ]);
   E.restos_admin = r.restaurants;
   E.types_impl = r.types;
+  E.utilisateurs = d.utilisateurs;
+  E.perimetres = d.perimetres;
   $("#vue").innerHTML =
     '<h2>Accès</h2>' +
     '<p class="sous">Un directeur dépose et consulte son restaurant.</p>' +
@@ -1526,13 +1528,17 @@ async function vueAdmin() {
     '<div class="actions" style="margin-bottom:18px">' +
       '<button class="fort" onclick="ficheResto(null)">Ouvrir un restaurant</button></div>' +
     '<div id="form-resto"></div>' +
-    '<div class="bloc">' + d.utilisateurs.map(function(u){
+    '<div class="bloc"><div class="carte-titre">Personnes · ' + d.utilisateurs.length + '</div>' +
+    d.utilisateurs.map(function(u){
       const n = d.perimetres.filter(p => p.utilisateur_id === u.id).length;
-      return '<div class="ligne"><div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
+      return '<button class="ligne" onclick="ficheUtilisateur(' + u.id + ')">' +
+        '<div class="corps"><div class="titre">' + esc(u.nom) + '</div>' +
         '<div class="detail">' + esc(u.role) + ' · ' + n + ' restaurant(s) · ' +
         (u.derniere_connexion ? "vu le " + jour(u.derniere_connexion) : "jamais connecté") +
-        '</div></div>' + (u.actif ? "" : '<span class="etiquette">inactif</span>') + '</div>';
+        '</div></div>' + (u.actif ? "" : '<span class="etiquette">inactif</span>') +
+        '<span class="resto-fleche">&#8250;</span></button>';
     }).join("") + '</div>' +
+    '<div id="form-utilisateur"></div>' +
     '<div class="bloc"><div class="zone">' +
       '<h3 style="margin:0 0 12px;font-size:15px">Ajouter une personne</h3>' +
       '<label class="champ"><span>Nom</span><input id="n-nom"></label>' +
@@ -1600,6 +1606,84 @@ async function enregistrerResto(id) {
             " personne(s) de l'encadrement. Les directeurs de site restent à ajouter.");
   } catch (e) {
     $("#err-resto").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
+  }
+}
+
+/* Un accès se modifie : les rôles changent, les périmètres bougent, un
+   code s'oublie. Sans cet écran il fallait supprimer et recréer, ce qui
+   fait perdre l'historique de connexion. */
+function ficheUtilisateur(id) {
+  const u = E.utilisateurs.find(x => x.id === id);
+  if (!u) return;
+  const p = E.perimetres.filter(x => x.utilisateur_id === id);
+  const droit = (rid, champ) => {
+    const l = p.find(x => x.restaurant_id === rid);
+    return l && l[champ];
+  };
+  const ROLES = [["DIRECTEUR","Directeur"],["SUPERVISEUR","Superviseur"],
+                 ["CDG","Contrôle de gestion"],["DG","Direction générale"]];
+
+  document.getElementById("form-utilisateur").innerHTML =
+    '<div class="bloc"><div class="zone">' +
+      '<h3 style="margin:0 0 12px;font-size:15px">' + esc(u.nom) + '</h3>' +
+      '<label class="champ"><span>Nom</span><input id="u-nom" value="' +
+        esc(u.nom || "") + '"></label>' +
+      '<label class="champ"><span>E-mail</span><input id="u-email" type="email" value="' +
+        esc(u.email || "") + '"></label>' +
+      '<label class="champ"><span>Rôle</span><select id="u-role">' +
+        ROLES.map(r => '<option value="' + r[0] + '"' + (u.role === r[0] ? " selected" : "") +
+          '>' + r[1] + '</option>').join("") + '</select></label>' +
+      '<label class="champ"><span>Statut</span><select id="u-actif">' +
+        '<option value="1"' + (u.actif ? " selected" : "") + '>actif</option>' +
+        '<option value="0"' + (u.actif ? "" : " selected") + '>désactivé</option>' +
+        '</select></label>' +
+      '<label class="champ"><span>Nouveau code (laisser vide pour ne pas le changer)</span>' +
+        '<input id="u-pin" inputmode="numeric" placeholder="••••••"></label>' +
+
+      '<span class="champ"><span>Restaurants</span></span>' +
+      '<div style="overflow-x:auto;margin-bottom:14px">' +
+      '<table class="comparatif"><thead><tr><th>Restaurant</th><th>Consulter</th>' +
+        '<th>Déposer</th><th>Clore</th></tr></thead><tbody>' +
+      E.restos_admin.filter(r => r.actif !== false).map(function (r) {
+        const c = (champ, suffixe) =>
+          '<td><input type="checkbox" id="u-' + suffixe + '-' + r.id + '"' +
+          (droit(r.id, champ) ? " checked" : "") + ' style="width:19px;height:19px;' +
+          'accent-color:var(--navy)"></td>';
+        return '<tr><td>' + esc(r.nom) + '</td>' +
+          c("peut_lire", "lire") + c("peut_deposer", "dep") + c("peut_cloturer", "clo") +
+          '</tr>';
+      }).join("") + '</tbody></table></div>' +
+      '<p class="sous" style="font-size:12.5px;margin-bottom:14px">Un directeur consulte et ' +
+        'dépose son restaurant sans pouvoir clore un écart. Clore est réservé à la direction ' +
+        'et aux superviseurs.</p>' +
+
+      '<div id="err-utilisateur"></div>' +
+      '<div class="actions" style="margin-top:0">' +
+        '<button class="fort" onclick="enregistrerUtilisateur(' + id + ')">Enregistrer</button>' +
+        '<button onclick="document.getElementById(\'form-utilisateur\').innerHTML=\'\'">' +
+          'Annuler</button></div>' +
+    '</div></div>';
+  document.getElementById("form-utilisateur")
+    .scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function enregistrerUtilisateur(id) {
+  const perimetres = E.restos_admin.filter(r => r.actif !== false).map(function (r) {
+    const lu = s => { const e = document.getElementById("u-" + s + "-" + r.id);
+                      return !!(e && e.checked); };
+    return { restaurant_id: r.id, peut_lire: lu("lire"),
+             peut_deposer: lu("dep"), peut_cloturer: lu("clo") };
+  }).filter(p => p.peut_lire || p.peut_deposer || p.peut_cloturer);
+
+  try {
+    const r = await api("audit", "majUtilisateur", { id: id,
+      nom: $("#u-nom").value.trim(), email: $("#u-email").value.trim(),
+      role: $("#u-role").value, actif: $("#u-actif").value === "1",
+      pin: $("#u-pin").value.trim() || undefined, perimetres: perimetres });
+    if (r && r.erreur) throw new Error(r.erreur);
+    aller("admin");
+  } catch (e) {
+    $("#err-utilisateur").innerHTML = '<div class="alerte erreur">' + esc(e.message) + '</div>';
   }
 }
 
