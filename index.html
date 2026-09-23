@@ -225,6 +225,21 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
         border-radius:9px;font-size:19px;line-height:1;display:none;
         align-items:center;justify-content:center;flex:0 0 34px}
 
+/* Tableau de comparaison entre encadrants. Les colonnes sont des taux,
+   la dernière ligne est le restaurant : c'est elle qui donne l'échelle. */
+.comparatif{width:100%;border-collapse:collapse;font-size:13px}
+.comparatif th{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line);
+               font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
+               color:var(--ink-3);font-weight:700}
+.comparatif th:first-child{text-align:left}
+.comparatif td{text-align:right;padding:10px 8px;border-bottom:1px solid var(--line);
+               font-variant-numeric:tabular-nums}
+.comparatif td:first-child{text-align:left;font-weight:650}
+.comparatif tr.total td{background:var(--paper);font-weight:750;border-bottom:0}
+.comparatif .haut{color:var(--vacances);font-weight:750}
+.comparatif .tres-haut{color:var(--close);font-weight:750}
+.comparatif .faible{color:var(--ink-3)}
+
 .vide{padding:44px 20px;text-align:center;color:var(--ink-3);font-size:14px;line-height:1.5}
 .vide b{display:block;color:var(--ink-2);margin-bottom:6px;font-size:16px;font-weight:650}
 .chargement{text-align:center;padding:40px;color:var(--ink-3)}
@@ -807,7 +822,10 @@ const heure = t => t ? new Date(t).toLocaleTimeString("fr-FR",
    du restaurant est rappelé en tête pour donner l'échelle — un encadrant à
    4 % dans un site à 4 % n'a rien de particulier. */
 async function vueEncadrants() {
-  const d = await api("audit", "encadrants", { restaurant_id: E.resto });
+  const [d, r] = await Promise.all([
+    api("audit", "encadrants", { restaurant_id: E.resto }),
+    api("audit", "ratios", { restaurant_id: E.resto }).catch(() => null)
+  ]);
   E.noms = Object.assign({}, E.noms, d.noms || {});
   const l = d.encadrants || [];
   const ref = d.taux_restaurant;
@@ -855,7 +873,62 @@ async function vueEncadrants() {
           '<div class="detail">' + eur0(e.total) + '</div></div></button>';
       }).join("") + '</div>'
     : '<div class="bloc"><div class="vide"><b>Aucun encadrant</b>' +
-      'Déposez les déclarations de caisse de ce restaurant.</div></div>');
+      'Déposez les déclarations de caisse de ce restaurant.</div></div>') +
+    tableauRatios(r);
+}
+
+/* Quatre ratios de comportement, côte à côte. Aucun ne se lit dans
+   l'absolu : c'est la dernière ligne, celle du restaurant, qui donne
+   l'échelle. Un taux d'annulation de 1,2 % n'est remarquable que si les
+   collègues sont à 0,3 %. */
+const COLONNES_RATIOS = [
+  ["taux_especes",   "Espèces",     "part du CA encaissée en liquide"],
+  ["taux_remise",    "Remises",     "remises en % du CA déclaré"],
+  ["taux_annulation","Annulations", "annulations en % du CA déclaré"],
+  ["taux_correction","Corrections", "corrections de ticket en % du CA déclaré"]
+];
+
+function tableauRatios(r) {
+  if (!r || !r.responsables || !r.responsables.length)
+    return '<div class="bloc"><div class="carte-titre">Ratios par encadrant</div>' +
+      '<div class="vide"><b>Pas encore de données</b>Déposez le rapport « Flux financiers ' +
+      'cumulés par responsable de comptage » pour comparer les encadrants entre eux.</div></div>';
+
+  const ref = r.restaurant;
+  const cellule = function (e, champ) {
+    const v = e[champ], m = ref[champ];
+    if (v === null || v === undefined) return '<td class="faible">—</td>';
+    // sans volume, un ratio ne se compare pas : on l'affiche en gris
+    if (e.caisses < 20) return '<td class="faible">' + v + ' %</td>';
+    let c = "";
+    if (m && m > 0.01) {
+      if (v >= m * 2) c = "tres-haut";
+      else if (v >= m * 1.4) c = "haut";
+    }
+    return '<td class="' + c + '">' + v + ' %</td>';
+  };
+
+  return '<div class="bloc">' +
+    '<div class="carte-titre">Ratios par encadrant</div>' +
+    '<div class="note">Ces quatre taux décrivent des comportements de caisse, pas des ' +
+      'écarts d\'argent. Ils se lisent par rapport à la ligne du restaurant, en bas : ' +
+      'un taux élevé partout est une habitude du site, un taux élevé chez une seule ' +
+      'personne est une question à poser. En ambre au-delà de 1,4 fois la référence, ' +
+      'en rouge au-delà du double. Les encadrants sous 20 caisses restent en gris : ' +
+      'leur ratio n\'est pas comparable.</div>' +
+    '<div class="zone" style="overflow-x:auto">' +
+    '<table class="comparatif"><thead><tr><th>Encadrant</th><th>Caisses</th>' +
+      COLONNES_RATIOS.map(c => '<th title="' + esc(c[2]) + '">' + c[1] + '</th>').join("") +
+    '</tr></thead><tbody>' +
+    r.responsables.map(function (e) {
+      return '<tr><td>' + esc(nom(e.code) !== e.code ? nom(e.code) : e.nom) + '</td>' +
+        '<td class="faible">' + e.caisses + '</td>' +
+        COLONNES_RATIOS.map(c => cellule(e, c[0])).join("") + '</tr>';
+    }).join("") +
+    '<tr class="total"><td>Restaurant</td><td>' + ref.caisses + '</td>' +
+      COLONNES_RATIOS.map(c => '<td>' +
+        (ref[c[0]] === null ? "—" : ref[c[0]] + " %") + '</td>').join("") + '</tr>' +
+    '</tbody></table></div></div>';
 }
 
 /* ---------- fiche d'un responsable ---------- */
